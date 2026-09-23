@@ -23,4 +23,4 @@ The agent-selection resolver (`skill-project-management/.specs/drafts/agent-sele
 
 ## Repository
 
-This repository, `model-routing` (created 2026-09-24; private until the operator decides its visibility, proposed public; consumed by task-board and the public `curator-run`). The draft specification is `spec/model-routing.md`.
+This repository, `curator-model-router` (created 2026-09-24; private until the operator decides its visibility, proposed public; consumed by task-board and the public `curator-run`). The draft specification is `spec/model-routing.md`.

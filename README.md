@@ -1,4 +1,4 @@
-# model-routing
+# curator-model-router
 
 Task-aware model routing for coding agents. Given a description of the work, its role and its constraints, the router chooses a launch configuration (runtime binding + model + reasoning effort) from the candidates that are already admitted and available. It records why in a decision bound to an evidence snapshot and hands the result to the caller's existing spawn gate. It never admits anything, never launches anything, and never switches accounts or egress.
 

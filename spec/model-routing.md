@@ -1,8 +1,8 @@
 # Task-aware model routing: specification
 
-Status: **DRAFT** (decided design, pre-implementation). Written 2026-09-22 from the proposal "самостоятельный эпик — Task-aware Model Routing" and its enriched copy (the operator's Russian working notes (kept outside repositories)), aligned with `skill-project-management/.specs/drafts/launch-profiles.md` (*LP*, decisions LP-D1…D16) and `launch-network/spec/network-profiles.md` (*NP*). Working names are marked *proposed*.
+Status: **DRAFT** (decided design, pre-implementation). Written 2026-09-22 from the proposal "самостоятельный эпик — Task-aware Model Routing" and its enriched copy (the operator's Russian working notes (kept outside repositories)), aligned with `skill-project-management/.specs/drafts/launch-profiles.md` (*LP*, decisions LP-D1…D16) and `curator-network/spec/network-profiles.md` (*NP*). Working names are marked *proposed*.
 
-> **Notes 2026-09-23.** The CandidateResolver (R2) is the agent-selection resolver (`skill-project-management/.specs/drafts/agent-selection.md` §7, §9): slices A0/A1 land with roadmap milestone M4, slices B–E in M8 (`spec/track.md`). Candidates are filtered by role needs from playbooks (hard requirements) and ranked with role preferences as priors; operator and project policies are separate layers with their own digests in the decision. The library gets its own public repository `model-routing`.
+> **Notes 2026-09-23.** The CandidateResolver (R2) is the agent-selection resolver (`skill-project-management/.specs/drafts/agent-selection.md` §7, §9): slices A0/A1 land with roadmap milestone M4, slices B–E in M8 (`spec/track.md`). Candidates are filtered by role needs from playbooks (hard requirements) and ranked with role preferences as priors; operator and project policies are separate layers with their own digests in the decision. The library gets its own public repository `curator-model-router`.
 
 ---
 
@@ -30,7 +30,7 @@ The unit of choice is a **runtime binding + model + effort** (LP-D1), together w
 
 ### R1 Architectural place: a library with caller adapters
 
-A Go module with the working name **`model-routing`** (*proposed*; not necessarily its own repository at first, never a network service). It imports neither task-board, nor the module's exec paths, nor ax storage, and creates no processes; callers convert their structures into independent DTOs. A shared resolver does not mean one global policy: task-board keeps its role/project constraints, `curator-run` keeps machine locks and environment constraints; the router copies none of them.
+A Go module with the working name **`curator-model-router`** (*proposed*; not necessarily its own repository at first, never a network service). It imports neither task-board, nor the module's exec paths, nor ax storage, and creates no processes; callers convert their structures into independent DTOs. A shared resolver does not mean one global policy: task-board keeps its role/project constraints, `curator-run` keeps machine locks and environment constraints; the router copies none of them.
 
 ```text
 Task / work description / role
@@ -47,7 +47,7 @@ TaskEnvelope             CandidateResolver
    │                       EligibleCandidates
    └────────────┬──────────────────┘
                 ▼
-          model-routing:  assess → estimate → select
+          curator-model-router:  assess → estimate → select
                 ▲
           EvidenceSnapshot (benchmarks, own outcomes)
                 │
@@ -58,7 +58,7 @@ TaskEnvelope             CandidateResolver
      existing spawn gate: revalidate → build → launch
 ```
 
-Owners: task-board (task, role, project constraints, routing mode, launch and acceptance); agents-management (identities and compatibility of runtime/model/effort/engine, plugin graph, launch contracts, the machine catalog); `model-routing` (evidence, requirements, fitness, strategies, decision records); `curator-run` (composition of a task-aware choice with the environment and launch pipeline); `curator-engine` (engine profiles, status and capacity; `ensure` is called by the process owner, never by the router); process host / future coordinator (real launch, resources, reservations, cancellation); Curator (delivery of pinned packages and managed homes; the account boundary).
+Owners: task-board (task, role, project constraints, routing mode, launch and acceptance); agents-management (identities and compatibility of runtime/model/effort/engine, plugin graph, launch contracts, the machine catalog); `curator-model-router` (evidence, requirements, fitness, strategies, decision records); `curator-run` (composition of a task-aware choice with the environment and launch pipeline); `curator-engine` (engine profiles, status and capacity; `ensure` is called by the process owner, never by the router); process host / future coordinator (real launch, resources, reservations, cancellation); Curator (delivery of pinned packages and managed homes; the account boundary).
 
 ### R2 Four questions, four owners
 
@@ -158,7 +158,7 @@ A separate task-aware mode: a work description or a prepared decision reference 
 
 ### R11 Network profiles, engines, pool
 
-`model-routing` decides what to launch; `launch-network` decides the allowed route (NP-N13). The router may treat compatibility with a mandatory network profile as a constraint; it never switches VPNs, credentials or quota domains; a network failure is not model-quality evidence. Engines: the router may weigh `engine.profile` capacity as compatibility and cost; `curator engine ensure` is the process owner's preflight action, never the router's. Pool (later): `ExecutionOption = ExecutionCandidate + AgentOffer + compatible EnvironmentBinding`; the inference machine and the tools machine differ, so an Xcode requirement is checked on the execution environment, not on the worker; the coordinator confirms placement and reserves; reviewer independence rules apply before scoring.
+`curator-model-router` decides what to launch; `curator-network` decides the allowed route (NP-N13). The router may treat compatibility with a mandatory network profile as a constraint; it never switches VPNs, credentials or quota domains; a network failure is not model-quality evidence. Engines: the router may weigh `engine.profile` capacity as compatibility and cost; `curator engine ensure` is the process owner's preflight action, never the router's. Pool (later): `ExecutionOption = ExecutionCandidate + AgentOffer + compatible EnvironmentBinding`; the inference machine and the tools machine differ, so an Xcode requirement is checked on the execution environment, not on the worker; the coordinator confirms placement and reserves; reviewer independence rules apply before scoring.
 
 ### R12 Retry and feedback
 
