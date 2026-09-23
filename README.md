@@ -16,4 +16,4 @@ Task-aware model routing for coding agents. Given a description of the work, its
 - A Go library with caller adapters for task-board and `curator-run`; it creates no processes and imports none of its callers.
 - Its CandidateResolver is task-board's agent-selection resolver (`skill-project-management/.specs/drafts/agent-selection.md`): hard filters answer "allowed", "compatible" and "available"; a routing strategy only ranks what passes them.
 - The caller launches the chosen candidate through the agents-management launch plane (`skill-agents-management`), and the existing spawn gate re-validates it.
-- Roadmap: slices A0/A1 with milestone M4, slices B–E with milestone M8, in `skill-project-management/.specs/roadmap/ecosystem-roadmap.md`.
+- Roadmap: slices A0/A1 with milestone M4, slices B–E with milestone M8, in `wiki/roadmap/ecosystem-roadmap.md`.
