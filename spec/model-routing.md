@@ -1,6 +1,6 @@
 # Task-aware model routing: specification
 
-Status: **DRAFT** (decided design, pre-implementation). Written 2026-09-22 from the proposal "самостоятельный эпик — Task-aware Model Routing" and its enriched copy, which the operator keeps as Russian working notes outside the repositories, aligned with `skill-project-management/.specs/drafts/launch-profiles.md` (*LP*, decisions LP-D1…D16) and `curator-network/spec/network-profiles.md` (*NP*). Working names are marked *proposed*.
+Status: **DRAFT** (decided design, pre-implementation). Written 2026-09-22 from the proposal "самостоятельный эпик — Task-aware Model Routing" and its enriched copy, which the operator keeps as Russian working notes outside the repositories, aligned with `skill-project-management/.specs/drafts/launch-profiles.md` (*LP*, decisions LP-D1…D16) and `curator-network-profiles/spec/network-profiles.md` (*NP*). Working names are marked *proposed*.
 
 > **Notes 2026-09-23.** The CandidateResolver (R2) is the agent-selection resolver (`skill-project-management/.specs/drafts/agent-selection.md` §7, §9): slices A0/A1 land with roadmap milestone M4, slices B–E in M8 (`spec/track.md`). Candidates are filtered by role needs from playbooks (hard requirements) and ranked with role preferences as priors; operator and project policies are separate layers with their own digests in the decision. The library gets its own public repository `curator-model-router`.
 
@@ -21,7 +21,7 @@ The unit of choice is a **runtime binding + model + effort** (LP-D1), together w
 | `internal/spawn/workload_class.go`; workload recommendations in `spawn-preflight` with a content-bound snapshot digest and rationale flags (`--recommendation-snapshot-digest`, `--recommendation-rationale`, `--selection-rationale`) | deterministic baseline of requirements per role and task class; the shape of "decision bound to a snapshot" already exists |
 | Admission: ceilings v3/v4 admitted pairs, `providerlimits` suppression, schedule windows, frozen-policy retry (`spawnruntime/limit_retry.go`) | the router never re-implements them; it consumes the admitted set |
 | Module `pkg/plugin.Registry` is kind-agnostic; `vendorplugin/bench.go` carries Bug Hunt measured/interpolated/cost observations; scores re-anchored on Bug Hunt Bench in `v0.5.12` | first evidence source; a new plugin kind needs no second framework |
-| LP: machine catalog `runtimes.toml` with `bound_on_this_machine`, `spawn.context_profile`, billing class per binding, availability block keyed by `(runtime, managed home)`, engine status from `curator-engine` | inputs of the CandidateResolver (R2) |
+| LP: machine catalog `runtimes.toml` with `bound_on_this_machine`, `spawn.context_profile`, billing class per binding, availability block keyed by `(runtime, managed home)`, engine status from `curator-inference-manager` | inputs of the CandidateResolver (R2) |
 | `cmd/workload_projection.go`, `validateSpawnWorkloadSelection`, `spawnruntime.WorkloadSelection` | named in the proposal from a source snapshot; verify at the start of slice A |
 
 ---
@@ -58,7 +58,7 @@ TaskEnvelope             CandidateResolver
      existing spawn gate: revalidate → build → launch
 ```
 
-Owners: task-board (task, role, project constraints, routing mode, launch and acceptance); agents-management (identities and compatibility of runtime/model/effort/engine, plugin graph, launch contracts, the machine catalog); `curator-model-router` (evidence, requirements, fitness, strategies, decision records); `curator-run` (composition of a task-aware choice with the environment and launch pipeline); `curator-engine` (engine profiles, status and capacity; `ensure` is called by the process owner, never by the router); process host / future coordinator (real launch, resources, reservations, cancellation); Curator (delivery of pinned packages and managed homes; the account boundary).
+Owners: task-board (task, role, project constraints, routing mode, launch and acceptance); agents-management (identities and compatibility of runtime/model/effort/engine, plugin graph, launch contracts, the machine catalog); `curator-model-router` (evidence, requirements, fitness, strategies, decision records); `curator-run` (composition of a task-aware choice with the environment and launch pipeline); `curator-inference-manager` (engine profiles, status and capacity; `ensure` is called by the process owner, never by the router); process host / future coordinator (real launch, resources, reservations, cancellation); Curator (delivery of pinned packages and managed homes; the account boundary).
 
 ### R2 Four questions, four owners
 
@@ -116,7 +116,7 @@ The first `TaskAssessor` is deterministic: existing workload derivation plus exp
 
 ### R6 Selection
 
-Relative utility, not a claimed success probability. Order: eligible and compatible → sufficient quality and evidence coverage → cost/latency/quality preference → stable tie-break → choice or abstain, so a low price never compensates arbitrarily poor quality. Strategies: `config-order` (today's behaviour as baseline), `quality-first`, `cost-with-quality-floor` (the floor cites the rubric/estimator version; `0.9` without a scale means nothing). `calibrated_success_probability` is a later, separately validated type. Cost is not one number: API billing estimate, quota consumption (providerquota per managed home), latency, local engine occupancy from `curator-engine status`, the start cost of a cold but ensurable engine; the catalog's `billing` class (`local | subscription | metered`, LP-D9) selects which of these applies. **The selector is a pure function** over frozen inputs: no network, no files, no clock, no model call, so replay reproduces the decision even when the assessor was nondeterministic.
+Relative utility, not a claimed success probability. Order: eligible and compatible → sufficient quality and evidence coverage → cost/latency/quality preference → stable tie-break → choice or abstain, so a low price never compensates arbitrarily poor quality. Strategies: `config-order` (today's behaviour as baseline), `quality-first`, `cost-with-quality-floor` (the floor cites the rubric/estimator version; `0.9` without a scale means nothing). `calibrated_success_probability` is a later, separately validated type. Cost is not one number: API billing estimate, quota consumption (providerquota per managed home), latency, local engine occupancy from `curator-inference-manager status`, the start cost of a cold but ensurable engine; the catalog's `billing` class (`local | subscription | metered`, LP-D9) selects which of these applies. **The selector is a pure function** over frozen inputs: no network, no files, no clock, no model call, so replay reproduces the decision even when the assessor was nondeterministic.
 
 ### R7 Modes, defaults, manual choice
 
@@ -158,7 +158,7 @@ A separate task-aware mode: a work description or a prepared decision reference 
 
 ### R11 Network profiles, engines, pool
 
-`curator-model-router` decides what to launch; `curator-network` decides the allowed route (NP-N13). The router may treat compatibility with a mandatory network profile as a constraint; it never switches VPNs, credentials or quota domains; a network failure is not model-quality evidence. Engines: the router may weigh `engine.profile` capacity as compatibility and cost; `curator engine ensure` is the process owner's preflight action, never the router's. Pool (later): `ExecutionOption = ExecutionCandidate + AgentOffer + compatible EnvironmentBinding`; the inference machine and the tools machine differ, so an Xcode requirement is checked on the execution environment, not on the worker; the coordinator confirms placement and reserves; reviewer independence rules apply before scoring.
+`curator-model-router` decides what to launch; `curator-network-profiles` decides the allowed route (NP-N13). The router may treat compatibility with a mandatory network profile as a constraint; it never switches VPNs, credentials or quota domains; a network failure is not model-quality evidence. Engines: the router may weigh `engine.profile` capacity as compatibility and cost; `curator-inference-manager ensure` is the process owner's preflight action, never the router's. Pool (later): `ExecutionOption = ExecutionCandidate + AgentOffer + compatible EnvironmentBinding`; the inference machine and the tools machine differ, so an Xcode requirement is checked on the execution environment, not on the worker; the coordinator confirms placement and reserves; reviewer independence rules apply before scoring.
 
 ### R12 Retry and feedback
 
