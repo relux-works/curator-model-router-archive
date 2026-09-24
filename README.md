@@ -10,6 +10,7 @@ Task-aware model routing for coding agents. Given a description of the work, its
 | --- | --- |
 | `spec/model-routing.md` | draft specification (decisions R1–R13) |
 | `spec/track.md` | delivery track (slices A0 to E) |
+| `spec/model-routing.ru.md`, `spec/track.ru.md` | Russian translations (the English files are canonical) |
 
 ## How it fits
 

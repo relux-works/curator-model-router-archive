@@ -4,7 +4,7 @@ Status: **DRAFT**, 2026-09-23. Specification: `spec/model-routing.md` (draft, R1
 
 ## Why
 
-Choosing a model for a task is today a static preference list per workload class. The router chooses among already admitted candidates from evidence and records why; it never admits anything, never launches anything and never switches accounts or egress.
+Today a model is chosen for a task from a static preference list per workload class. The router chooses among already admitted candidates from evidence and records why; it never admits anything, never launches anything and never switches accounts or egress.
 
 ## How it fits agent selection
 
