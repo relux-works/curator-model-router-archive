@@ -30,7 +30,7 @@ The unit of choice is a **runtime binding + model + effort** (LP-D1), together w
 
 ### R1 Architectural place: a library with caller adapters
 
-A Go module with the working name **`curator-model-router`** (*proposed*; not necessarily its own repository at first, never a network service). It imports neither task-board, nor the module's exec paths, nor ax storage, and creates no processes; callers convert their structures into independent DTOs. A shared resolver does not mean one global policy: task-board keeps its role/project constraints, `curator-run` keeps machine locks and environment constraints; the router copies none of them.
+A Go module with the working name **`curator-model-router`** (its own repository since 2026-09-24; never a network service). It imports neither task-board, nor the module's exec paths, nor ax storage, and creates no processes; callers convert their structures into independent DTOs. A shared resolver does not mean one global policy: task-board keeps its role/project constraints, `curator-run` keeps machine locks and environment constraints; the router copies none of them.
 
 ```text
 Task / work description / role
@@ -209,4 +209,4 @@ The object shapes are in R3 and R8; the exact comparison and replay rules are wr
 
 Closed by this document: the router is a library with caller adapters; candidates are runtime bindings with the LP fingerprint members; the four-question split and its owners; pure selector; four modes with a free-field mask; decision document shape; two-phase validation in task-board; dependency on LP Phase 1 for the machine half. Added 2026-09-22 after the independent review: dependent settings (network profile, context profile) are resolved by the caller and fixed unless the mask frees them, so the router never switches a route; engine availability is two facts, `ready` and `ensurable`, and a cold but ensurable engine stays eligible with a start cost; cross-effort evidence exists only as `transferred`; validation compares member-wise; slice A is split into A0 (now) and A1 (after LP Phase 1); the contract appendix of §5 is an A0 deliverable. After the second review: `decision_id` is content-addressed or referenced together with its digest, so a signed assignment binds one immutable decision to the execution parameters it carries.
 
-Remaining for the implementing session (record why when choosing): module location (inside `skill-agents-management` as a package beside `vendorplugin/bench.go`, or its own repository), the first judgment backend (Jev vs structured LLM), the initial evidence sources beyond Bug Hunt, and the `--routing-decision` flag name.
+Remaining for the implementing session (record why when choosing): the first judgment backend (Jev vs structured LLM), the initial evidence sources beyond Bug Hunt, and the `--routing-decision` flag name.
