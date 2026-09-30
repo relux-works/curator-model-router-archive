@@ -4,6 +4,22 @@ Status: **DRAFT** (decided design, pre-implementation). Written 2026-09-22 from 
 
 > **Notes 2026-09-23.** The CandidateResolver (R2) is the agent-selection resolver (`skill-project-management/.specs/drafts/agent-selection.md` §7, §9): slices A0/A1 land with roadmap milestone M4, slices B–E in M8 (`spec/track.md`). Candidates are filtered by role needs from playbooks (hard requirements) and ranked with role preferences as priors; operator and project policies are separate layers with their own digests in the decision. The library gets its own public repository `curator-model-router`.
 
+> **Notes 2026-10-01.** The operator decided on 2026-09-30 (coordination ruling R79):
+>
+> - **D1, the split is facts, decision, enforcement.**
+>   - agents-management holds the facts: the model registry and its bench data, the reactive limit plane, the machine catalog, and the new usage records (`pkg/providerquota`).
+>   - This repository holds the decision: evidence, assessment, fitness, strategies and decision records.
+>   - task-board keeps admission, the CandidateResolver and enforcement, budgets included.
+> - **D2, no CodexBar dependency.** Usage comes from each harness's own public surfaces.
+> - **D3/D4, automation.** A dedicated orchestrator implements this with maximal automation and brings only genuine product forks to the operator.
+>
+> Two specifications are new:
+>
+> - `spec/evidence-format.md`: the internal, source-agnostic evidence format, with task categories, exact effort, internal notes per model and a derived role-suitability view. R4 points there.
+> - `spec/headroom.md`: usage facts per `(runtime, managed home)`, where stale means unknown, and the `headroom-aware` strategy. R2 and R6 point there.
+>
+> `spec/track.md` splits delivery into parallel workstreams W0–W5.
+
 ---
 
 ## 0. Goal
@@ -22,6 +38,7 @@ The unit of choice is a **runtime binding + model + effort** (LP-D1), together w
 | Admission: ceilings v3/v4 admitted pairs, `providerlimits` suppression, schedule windows, frozen-policy retry (`spawnruntime/limit_retry.go`) | the router never re-implements them; it consumes the admitted set |
 | Module `pkg/plugin.Registry` is kind-agnostic; `vendorplugin/bench.go` carries Bug Hunt measured/interpolated/cost observations; scores re-anchored on Bug Hunt Bench in `v0.5.12` | first evidence source; a new plugin kind needs no second framework |
 | LP: machine catalog `runtimes.toml` with `bound_on_this_machine`, `spawn.context_profile`, billing class per binding, availability block keyed by `(runtime, managed home)`, engine status from `curator-inference-manager` | inputs of the CandidateResolver (R2) |
+| `pkg/providerquota` in agents-management: designed and reviewed under EPIC-260907-33o1db (2026-09-08), not yet built | the usage records of `spec/headroom.md`; built as workstream W3 |
 | `cmd/workload_projection.go`, `validateSpawnWorkloadSelection`, `spawnruntime.WorkloadSelection` | named in the proposal from a source snapshot; verify at the start of slice A |
 
 ---
@@ -71,6 +88,8 @@ Owners: task-board (task, role, project constraints, routing mode, launch and ac
 
 The estimator answers the third question only. A positive score never overrides the other three. Prediction is not enforcement: "this will fit the budget" enforces nothing; the execution owner applies limits. No eligible candidates returns `no_eligible_candidates` **before** any paid assessor runs. A cold but ensurable engine keeps its candidate eligible and carries a start cost (R6); only `not ensurable` excludes it. Otherwise a stopped engine would never be chosen and therefore never ensured (LP-D9, amended 2026-09-22).
 
+Usage (quota) is advisory. The usage record per `(runtime, managed home)` orders candidates through the `headroom-aware` strategy and never admits or removes one; a stale record counts as unknown (`spec/headroom.md`). The reactive limit plane stays the authority on `Limited`.
+
 ### R3 Data model
 
 Six objects: `TaskEnvelope` (the delegated work: description, substantive revision, role, criteria, context, tools; a concrete task, never the whole Epic or the orchestrator's conversation), `ExecutionCandidate`, `CandidateSnapshot` (the admitted set and how it was obtained), `EvaluationSnapshot` (measurements, rubric, assessments, estimates, evaluator versions), `RoutingPolicy` (what may be chosen, how to compare, what to do with insufficient data), `RoutingDecision`.
@@ -108,6 +127,8 @@ Observation
 
 `evidence_kind` and `grading_method` are independent: an LLM-judge result can be a real observation without becoming a test-oracle result. Semantics: no measurement is *unknown*, not zero; no price is *unknown*, not free; an unknown model in a file is an *unresolved observation*, not a runtime registration. Leaderboards are never averaged; the estimator states the mapping from requirements to measurements, normalization and applicability; reprints of one result are not independent confirmations; a measurement at one effort is never presented as a measurement at another, and an estimate derived for another effort exists only as `evidence_kind = transferred` with its own uncertainty and a stated transfer rule. An import creates a new snapshot and never rewrites the module's global `Rank.Score`.
 
+The full format is `spec/evidence-format.md` (2026-10-01): benchmark definitions with versions and protocols, the task-category taxonomy, exact effort per observation, internal notes per model, and the derived role-suitability view.
+
 ### R5 Evaluator contracts
 
 Five narrow interfaces instead of `Evaluator(any) → float`: `EvidenceSource` (import observations), `TaskAssessor` (work → requirements and features), `FitnessEstimator` (requirements + candidates + evidence → fitness), `SelectionStrategy` (frozen estimates + preferences → choice or abstain), `OutcomeEvaluator` (result and checks → a quality observation, never the right to accept work). Running a benchmark is a separate optional capability, never hidden inside an importer.
@@ -116,7 +137,7 @@ The first `TaskAssessor` is deterministic: existing workload derivation plus exp
 
 ### R6 Selection
 
-Relative utility, not a claimed success probability. Order: eligible and compatible → sufficient quality and evidence coverage → cost/latency/quality preference → stable tie-break → choice or abstain, so a low price never compensates arbitrarily poor quality. Strategies: `config-order` (today's behaviour as baseline), `quality-first`, `cost-with-quality-floor` (the floor cites the rubric/estimator version; `0.9` without a scale means nothing). `calibrated_success_probability` is a later, separately validated type. Cost is not one number: API billing estimate, quota consumption (providerquota per managed home), latency, local engine occupancy from `curator-inference-manager status`, the start cost of a cold but ensurable engine; the catalog's `billing` class (`local | subscription | metered`, LP-D9) selects which of these applies. **The selector is a pure function** over frozen inputs: no network, no files, no clock, no model call, so replay reproduces the decision even when the assessor was nondeterministic.
+Relative utility, not a claimed success probability. Order: eligible and compatible → sufficient quality and evidence coverage → cost/latency/quality preference → stable tie-break → choice or abstain, so a low price never compensates arbitrarily poor quality. Strategies: `config-order` (today's behaviour as baseline), `quality-first`, `cost-with-quality-floor` (the floor cites the rubric/estimator version; `0.9` without a scale means nothing). `headroom-aware` (2026-10-01) wraps any of these: inside an interchangeable group it prefers capacity that would expire at reset, conserves subscriptions burning faster than their window, keeps a reserve for orchestrators and reviewers, and spreads in-flight runs; it never trades quality outside the group (`spec/headroom.md` §5). `calibrated_success_probability` is a later, separately validated type. Cost is not one number: API billing estimate, quota consumption (providerquota per managed home), latency, local engine occupancy from `curator-inference-manager status`, the start cost of a cold but ensurable engine; the catalog's `billing` class (`local | subscription | metered`, LP-D9) selects which of these applies. **The selector is a pure function** over frozen inputs: no network, no files, no clock, no model call, so replay reproduces the decision even when the assessor was nondeterministic.
 
 ### R7 Modes, defaults, manual choice
 
@@ -208,5 +229,13 @@ The object shapes are in R3 and R8; the exact comparison and replay rules are wr
 ## 6. Closed decisions and remaining choices
 
 Closed by this document: the router is a library with caller adapters; candidates are runtime bindings with the LP fingerprint members; the four-question split and its owners; pure selector; four modes with a free-field mask; decision document shape; two-phase validation in task-board; dependency on LP Phase 1 for the machine half. Added 2026-09-22 after the independent review: dependent settings (network profile, context profile) are resolved by the caller and fixed unless the mask frees them, so the router never switches a route; engine availability is two facts, `ready` and `ensurable`, and a cold but ensurable engine stays eligible with a start cost; cross-effort evidence exists only as `transferred`; validation compares member-wise; slice A is split into A0 (now) and A1 (after LP Phase 1); the contract appendix of §5 is an A0 deliverable. After the second review: `decision_id` is content-addressed or referenced together with its digest, so a signed assignment binds one immutable decision to the execution parameters it carries.
+
+Added 2026-10-01 from the operator decisions of 2026-09-30:
+
+- The facts, decision and enforcement split (D1): usage records are module facts, and the router consumes them.
+- No CodexBar (D2).
+- The evidence format is `spec/evidence-format.md`. It supersedes the module placement proposed in STORY-260908-15logt.
+- Headroom is a soft ordering inside interchangeable groups, and stale means unknown (`spec/headroom.md`).
+- Delivery runs as parallel workstreams (`spec/track.md`).
 
 Remaining for the implementing session (record why when choosing): the first judgment backend (Jev vs structured LLM), the initial evidence sources beyond Bug Hunt, and the `--routing-decision` flag name.
