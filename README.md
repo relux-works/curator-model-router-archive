@@ -2,12 +2,17 @@
 
 Task-aware model routing for coding agents. Given a description of the work, its role and its constraints, the router chooses a launch configuration (runtime binding + model + reasoning effort) from the candidates that are already admitted and available. It records why in a decision bound to an evidence snapshot and hands the result to the caller's existing spawn gate. It never admits anything, never launches anything, and never switches accounts or egress.
 
-**Status: DRAFT design. No code yet; nothing here is normative.**
+**Status: code exists — W0 scaffold and frozen shared contracts. Routing and evidence strategies follow in W1/W2.**
 
 ## Layout
 
 | Path | Content |
 | --- | --- |
+| `cmd/cmr/` | CLI scaffold: help and version, split by subcommand file |
+| `pkg/canonical/` | canonical JSON, typed refusals, SHA-256 digests and golden vectors |
+| `pkg/routing/` | frozen shared contracts, usage projection, policy defaults and validation |
+| `spec/contract-appendix.md` | normative digest contract and vector index |
+| `.github/workflows/ci.yml`, `Makefile` | tests, race checks, vet, formatting and actionlint |
 | `spec/model-routing.md` | draft specification (decisions R1–R13) |
 | `spec/evidence-format.md` | the internal evidence format: benchmarks, observations at an exact effort, internal notes per model, the role-suitability view |
 | `spec/headroom.md` | usage facts per `(runtime, managed home)` and the `headroom-aware` strategy |
