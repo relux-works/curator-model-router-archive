@@ -125,5 +125,9 @@
   "source": {
     "name": "fixture",
     "version": "v1"
-  }
+  },
+  "config_order": [
+    "b",
+    "a"
+  ]
 }

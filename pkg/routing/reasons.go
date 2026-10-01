@@ -6,6 +6,7 @@ package routing
 type ReasonCode string
 
 const (
+	ReasonConfigOrderPreserved              ReasonCode = "config_order_preserved"
 	ReasonNoEligibleCandidates              ReasonCode = "no_eligible_candidates"
 	ReasonCandidateDependentSettingMismatch ReasonCode = "candidate_dependent_setting_mismatch"
 	ReasonSelectedCandidateUnavailable      ReasonCode = "selected_candidate_unavailable"

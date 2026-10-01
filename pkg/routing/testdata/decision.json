@@ -31,10 +31,12 @@
       "position": 1,
       "reason_codes": [
         "inflight_spread"
-      ]
+      ],
+      "base_position": 0
     }
   ],
   "reason_codes": [
+    "config_order_preserved",
     "quota_on_pace"
   ],
   "evidence_refs": [

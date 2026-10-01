@@ -8,14 +8,16 @@ import (
 )
 
 const (
-	ContractMissingField       = "contract_missing_field"
-	ContractEmptyField         = "contract_empty_field"
-	ContractUnknownField       = "contract_unknown_field"
-	ContractFieldForbidden     = "contract_field_forbidden"
-	ContractInvalidDigest      = "contract_invalid_digest"
-	ContractFreshnessMismatch  = "contract_freshness_mismatch"
-	ContractDecisionIDMismatch = "contract_decision_id_mismatch"
-	EstimatorSnapshotMismatch  = "estimator_snapshot_mismatch"
+	ContractMissingField        = "contract_missing_field"
+	ContractConfigOrderMismatch = "contract_config_order_mismatch"
+	ContractBasePositionInvalid = "contract_base_position_invalid"
+	ContractEmptyField          = "contract_empty_field"
+	ContractUnknownField        = "contract_unknown_field"
+	ContractFieldForbidden      = "contract_field_forbidden"
+	ContractInvalidDigest       = "contract_invalid_digest"
+	ContractFreshnessMismatch   = "contract_freshness_mismatch"
+	ContractDecisionIDMismatch  = "contract_decision_id_mismatch"
+	EstimatorSnapshotMismatch   = "estimator_snapshot_mismatch"
 )
 
 // NewEstimatorSnapshotMismatchError constructs the typed refusal when evidence

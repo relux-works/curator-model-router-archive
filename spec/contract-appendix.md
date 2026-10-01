@@ -43,8 +43,29 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
    (runtime, scope), and scope model ids by id. Evaluation assessments are by id,
    estimates by candidate id, evaluator versions by name, and record addresses
    lexically. Policy masks, protected roles, window-id lists, and reason sets are
-   lexical. Alternatives are by increasing base position. Task criteria/context/
+   lexical. Alternatives are by increasing current `position`. Task criteria/context/
    tools and declared group/pair lists retain explicit policy/task order.
+   `CandidateSnapshot.config_order` is REQUIRED and non-nil (nil is
+   `contract_missing_field`); `[]` is valid only when `candidates` is empty.
+   It is the operator/caller configuration order, a semantic-order array that
+   MUST NOT be sorted or normalized, and the only source of base order for
+   `config-order`. It MUST be an exact permutation of candidate ids: every id
+   once, with no extras or duplicates. An extra, missing, or duplicate id is
+   `contract_config_order_mismatch`, naming the offending id. Extras and
+   duplicates are checked in configuration order, then missing ids in candidate
+   id order. `candidates` remains keyed and sorted by id; both arrays are hashed.
+   `RankedCandidate.base_position` is an optional integer: the candidate's
+   position in the base strategy's order before any wrapper permuted it, absent
+   when no wrapper ran. If present on any member of a `SelectionResult.order`
+   or `RoutingDecision.alternatives` list, it MUST be present on all members of
+   that list, non-negative and unique. In a `SelectionResult.order`, which
+   ranks every eligible candidate, they MUST also form a permutation of 0..n-1,
+   where n is the list's length; `RoutingDecision.alternatives` may omit the
+   selected candidate, so gaps are allowed there. Partial presence, negative
+   values, duplicates, or (in a selection order) out-of-range values are
+   `contract_base_position_invalid`. Zero is serialized; absent is omitted.
+   Base positions preserve semantic order and need not increase with current
+   `position`; present values are included in decision hashes.
 5. Load policy defaults before hashing. Programmatic policies MUST start from
    `DefaultPolicy` and pass `Validate`; `LoadPolicy` materializes defaults while
    preserving explicit zero, false, and empty values. Every key MUST exactly
@@ -100,7 +121,8 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
    MUST be later than preparation; both use the supported timestamp range.
    Violations are `routing_invalid_decision`. Outcome tokens live in
    `OutcomeKind`; only spec-named reasons live in `ReasonCode` (including the
-   explicitly named `no_eligible_candidates`). `bound_on_this_machine` is a
+   explicitly named `no_eligible_candidates` and the baseline
+   `config_order_preserved`). `bound_on_this_machine` is a
    catalog field, not a reason.
 9. `FitnessEstimator` MUST be pure and deterministic over immutable in-memory
    evidence. It MUST refuse a reference whose `EvidenceSnapshotRef.Digest`
@@ -112,7 +134,8 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
     `canonical_nonfinite`, `canonical_missing_schema_version`,
     `canonical_unordered`, `canonical_duplicate_key`, `canonical_invalid_json`.
     Routing codes include the `contract_*`, `estimator_snapshot_mismatch`, and
-    group codes specified above; `routing_unknown_enum`, `routing_invalid_policy`,
+    group codes specified above (including `contract_config_order_mismatch` and
+    `contract_base_position_invalid`); `routing_unknown_enum`, `routing_invalid_policy`,
     `routing_invalid_as_of`, `routing_invalid_count`, `routing_missing_usage_key`,
     `routing_invalid_evidence_ref`, `routing_invalid_estimate`,
     `routing_invalid_selection`, `routing_invalid_decision`,
@@ -164,7 +187,8 @@ stored as large JSON files; both array and object nesting boundaries are checked
 
 Routing goldens live in `pkg/routing/testdata/`. The minimal-input default policy
 pins both materialized canonical bytes and digest. The rich candidates and
-non-default policy also pin canonical bytes; existing fixtures pin digests.
+non-default policy also pin canonical bytes; C1 candidates and decision fixtures
+pin canonical bytes as well. All fixtures pin digests.
 All newly added expected bytes/digests were independently authored from literal
 JSON with sorted ASCII keys and SHA-256, without using the production defaults
 or encoder. Normal runs only compare.
@@ -172,10 +196,10 @@ or encoder. Normal runs only compare.
 | Routing fixture | Digest (decision uses content id) |
 | --- | --- |
 | `envelope` | `sha256:e619e4332988da914296dce3089a38ef796ed56f3ad0a3e9b8c311d658eaf7df` |
-| `candidates` | `sha256:22cd73316d314fdc6ba3f90ef725d5ed5a72193e03c9317768eff85b41305939` |
-| `candidates-rich` | `sha256:ca0c49f546064904fdfda2aaa5f73606d5d6558aaacfc0d9a4b9253a57292c62` |
+| `candidates` | `sha256:453fcfbfbb2d45097c8e64417306ca0c9000d4a7e27f1bb31eab617828ab45b7` |
+| `candidates-rich` | `sha256:ad3f75ce683af0cb4a47a62a37f2504ce9502095949e0237740ebf4629c85cec` |
 | `evaluation` | `sha256:8425c15c52a90e36df68b2357973e1edef45c68e990bec640b7a4850f9a6c68c` |
 | `policy` | `sha256:4901016a8b88cd9979f8f3bfadba6f81a421a11c917d1ab738c28a0f587b53ef` |
 | `policy-default` | `sha256:cc2682ca409195e06263f4a12627eda2014bee142f3ec34ac7b5d26dfd8b0117` |
 | `policy-nondefault` | `sha256:c7c16d82cd085867dbb82c367b7437ca06356bc356c52c7b28a0ccaa212ed4c4` |
-| `decision` | `sha256:9a859577ef79f81203fade534679ed5fd3856c1809a7e1febf3ee859ffc6bad4` |
+| `decision` | `sha256:1228405101a544c94998bae4d1d099908af4913b75d814c45c4f333e16ecdf31` |

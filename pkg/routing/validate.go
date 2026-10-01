@@ -2,6 +2,7 @@ package routing
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
 	"github.com/relux-works/curator-model-router/pkg/canonical"
@@ -72,6 +73,30 @@ func (v CandidateSnapshot) Validate() error {
 	for _, c := range v.Candidates {
 		if err := validateCandidate(c); err != nil {
 			return err
+		}
+	}
+	return checkConfigOrder(v.ConfigOrder, v.Candidates)
+}
+
+func checkConfigOrder(order []string, candidates []ExecutionCandidate) error {
+	ids := make(map[string]bool, len(candidates))
+	for _, candidate := range candidates {
+		ids[candidate.ID] = false
+	}
+	for _, id := range order {
+		seen, exists := ids[id]
+		if !exists {
+			return fail(ContractConfigOrderMismatch, fmt.Sprintf("config_order contains extra candidate id %q", id))
+		}
+		if seen {
+			return fail(ContractConfigOrderMismatch, fmt.Sprintf("config_order duplicates candidate id %q", id))
+		}
+		ids[id] = true
+	}
+	// Candidates are already sorted, so missing-id refusals are deterministic.
+	for _, candidate := range candidates {
+		if !ids[candidate.ID] {
+			return fail(ContractConfigOrderMismatch, fmt.Sprintf("config_order is missing candidate id %q", candidate.ID))
 		}
 	}
 	return nil
@@ -173,6 +198,34 @@ func (v SelectionResult) ValidateAgainst(candidates []ExecutionCandidate) error 
 		}
 		delete(eligible, ranked.CandidateID)
 	}
+	return checkBasePositions(v.Order, true)
+}
+
+// checkBasePositions enforces all-or-none presence and unique non-negative
+// values. A full selection order must also be a permutation of 0..n-1;
+// decision alternatives may omit the selected candidate, so they need not be.
+func checkBasePositions(ranked []RankedCandidate, permutation bool) error {
+	present := false
+	for _, candidate := range ranked {
+		present = present || candidate.BasePosition != nil
+	}
+	if !present {
+		return nil
+	}
+	seen := make(map[int64]bool, len(ranked))
+	for _, candidate := range ranked {
+		if candidate.BasePosition == nil {
+			return fail(ContractBasePositionInvalid, fmt.Sprintf("candidate %q is missing base_position", candidate.CandidateID))
+		}
+		position := *candidate.BasePosition
+		if position < 0 || seen[position] {
+			return fail(ContractBasePositionInvalid, fmt.Sprintf("candidate %q base_position must be unique and non-negative", candidate.CandidateID))
+		}
+		if permutation && position >= int64(len(ranked)) {
+			return fail(ContractBasePositionInvalid, fmt.Sprintf("candidate %q base_position must form a permutation of 0..n-1", candidate.CandidateID))
+		}
+		seen[position] = true
+	}
 	return nil
 }
 func (v RoutingDecision) Validate() error {
@@ -210,7 +263,7 @@ func (v RoutingDecision) Validate() error {
 	if err := checkAddresses(v.EvidenceRefs, true); err != nil {
 		return err
 	}
-	// TODO(decision): alternatives retain increasing base positions (not candidate
+	// TODO(decision): alternatives retain increasing current positions (not candidate
 	// id order); reason-code sets use lexical order. Their spec declares no key.
 	for i, alternative := range v.Alternatives {
 		if alternative.Position < 0 {
@@ -230,5 +283,5 @@ func (v RoutingDecision) Validate() error {
 	if err := canonical.CheckOrdered(v.ReasonCodes, func(v ReasonCode) string { return string(v) }); err != nil {
 		return err
 	}
-	return nil
+	return checkBasePositions(v.Alternatives, false)
 }

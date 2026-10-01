@@ -119,6 +119,11 @@ type Provenance struct {
 	Version string `json:"version,omitempty"`
 	Digest  string `json:"digest,omitempty"`
 }
+
+// CandidateSnapshot keeps Candidates keyed and sorted by id. ConfigOrder is the
+// required operator/caller configuration order, an exact permutation of those
+// ids in semantic order, and the only source of base order for config-order.
+// Both Candidates and ConfigOrder are included in the snapshot digest.
 type CandidateSnapshot struct {
 	SchemaVersion string               `json:"schema_version"`
 	AsOf          int64                `json:"as_of"`
@@ -126,6 +131,7 @@ type CandidateSnapshot struct {
 	UsageFacts    []UsageFact          `json:"usage_facts"`
 	Inflight      []Inflight           `json:"inflight"`
 	Candidates    []ExecutionCandidate `json:"candidates"`
+	ConfigOrder   []string             `json:"config_order"`
 	Source        Provenance           `json:"source"`
 }
 
@@ -191,9 +197,15 @@ type FitnessEstimator interface {
 	Estimate(Requirements, []ExecutionCandidate, EvidenceSnapshotRef) ([]Estimate, error)
 }
 type RankedCandidate struct {
-	CandidateID string       `json:"candidate_id"`
-	Position    int64        `json:"position"`
-	ReasonCodes []ReasonCode `json:"reason_codes"`
+	CandidateID string `json:"candidate_id"`
+	Position    int64  `json:"position"`
+	// BasePosition is the position in the base strategy's order before any
+	// wrapper permuted it; absent when no wrapper ran. Within a selection order
+	// or alternatives list, values are all-or-none, non-negative and unique; in a
+	// selection order they also form a permutation of 0..n-1 (alternatives may
+	// omit the selected candidate).
+	BasePosition *int64       `json:"base_position,omitempty"`
+	ReasonCodes  []ReasonCode `json:"reason_codes"`
 }
 type Abstention struct {
 	Reason ReasonCode `json:"reason"`

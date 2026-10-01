@@ -327,7 +327,7 @@ func TestKnownEmptyCollections(t *testing.T) {
 	if _, err := envelope.Digest(); err != nil {
 		t.Fatalf("known-empty envelope: %v", err)
 	}
-	snapshot := CandidateSnapshot{SchemaVersion: "v1", AsOf: 1800000000, ScopeMap: ScopeMap{Version: "v1", Entries: []ScopeMapEntry{}}, UsageFacts: []UsageFact{}, Inflight: []Inflight{}, Candidates: []ExecutionCandidate{}, Source: Provenance{Name: Unknown}}
+	snapshot := CandidateSnapshot{SchemaVersion: "v1", AsOf: 1800000000, ScopeMap: ScopeMap{Version: "v1", Entries: []ScopeMapEntry{}}, UsageFacts: []UsageFact{}, Inflight: []Inflight{}, Candidates: []ExecutionCandidate{}, ConfigOrder: []string{}, Source: Provenance{Name: Unknown}}
 	if _, err := snapshot.Digest(); err != nil {
 		t.Fatalf("known-empty snapshot: %v", err)
 	}
