@@ -17,7 +17,7 @@ Task-aware model routing for coding agents. Given a description of the work, its
 | `spec/evidence-format.md` | the internal evidence format: benchmarks, observations at an exact effort, internal notes per model, the role-suitability view |
 | `spec/headroom.md` | usage facts per `(runtime, managed home)` and the `headroom-aware` strategy |
 | `spec/track.md` | delivery track: workstreams W0–W5 and slices A0 to E |
-| `spec/model-routing.ru.md`, `spec/track.ru.md` | Russian translations (the English files are canonical; the 2026-10-01 files are not translated yet) |
+| `spec/model-routing.ru.md`, `spec/evidence-format.ru.md`, `spec/headroom.ru.md`, `spec/track.ru.md` | Russian translations (the English files are canonical) |
 
 ## How it fits
 
