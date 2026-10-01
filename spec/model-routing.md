@@ -106,7 +106,7 @@ tool profile / execution mode
 AgentOffer, compatible EnvironmentBinding       (later, pool)
 ```
 
-Execution fingerprint for evidence matching: vendor/model identity, harness version, effort, engine profile (engine kind, weight digest, quantization, `kv_context_tokens`, `prefill_chunk_tokens`), environment/tool profile, execution profile. For a cloud alias the exact internal version is recorded as unknown, never faked as a pin. Private members (endpoints with credentials, paths, PIDs) never enter a fingerprint: it is built from the public `RuntimeProvenance` (LP-D11). The work digest does not change on every `ready → running` transition; content and criteria are one thing, current executability is the workflow's.
+Execution fingerprint for evidence matching: vendor/model identity, harness version, effort, engine profile (engine kind, weight digest, quantization, `kv_context_tokens`, `prefill_chunk_tokens`; later the KV cache type, slice K4), environment/tool profile, execution profile. For a cloud alias the exact internal version is recorded as unknown, never faked as a pin. Private members (endpoints with credentials, paths, PIDs) never enter a fingerprint: it is built from the public `RuntimeProvenance` (LP-D11). The work digest does not change on every `ready → running` transition; content and criteria are one thing, current executability is the workflow's.
 
 ### R4 Evidence
 
@@ -183,7 +183,7 @@ A separate task-aware mode: a work description or a prepared decision reference 
 
 ### R12 Retry and feedback
 
-Provider-limit retry keeps its frozen policy; in the first integration the routing decision covers the initial attempt explicitly and later attempts record their actual configuration and the link to the decision. Hard constraints always hold. A strict policy incompatible with old retry refuses or forbids candidate change, and a new snapshot, assessor or objective is never mixed in between attempts silently. Quality escalation after a bad result is a workflow decision, not a provider-limit retry. Feedback comes from the result, not the agent's self-report: `decision_id`, `run_id/attempt_id`, `actual_execution_fingerprint` (later including engine profile and KV outcome `cold|restored`, LP-D10), `artifact_revision`, checks/review/acceptance, actual usage/latency/resources, `failure_class` (model error, network, auth/limit, environment, `engine_ensure_failed`, cancellation, incomplete evaluation are distinct; unknown stays unknown). `OutcomeEvaluator` forms an observation, and acceptance stays with the workflow. New outcomes enter the next snapshot and never change the active strategy after each task; trained estimators or calibration artifacts ship as separately reviewed versions.
+Provider-limit retry keeps its frozen policy; in the first integration the routing decision covers the initial attempt explicitly and later attempts record their actual configuration and the link to the decision. Hard constraints always hold. A strict policy incompatible with old retry refuses or forbids candidate change, and a new snapshot, assessor or objective is never mixed in between attempts silently. Quality escalation after a bad result is a workflow decision, not a provider-limit retry. Feedback comes from the result, not the agent's self-report: `decision_id`, `run_id/attempt_id`, `actual_execution_fingerprint` (later including engine profile and the KV cache type), `kv_outcome` `warm|restored|cold` (`warm`: a retained live slot was reused; `restored`: a snapshot was restored; `cold`: a full prefill), or `unknown` with a reason code when it cannot be measured, always measured from the usage of the run's attributed main request, never from the last request seen (LP-D10; KV track Q9, 2026-10-01), `artifact_revision`, checks/review/acceptance, actual usage/latency/resources, `failure_class` (model error, network, auth/limit, environment, `engine_ensure_failed`, cancellation, incomplete evaluation are distinct; unknown stays unknown). `OutcomeEvaluator` forms an observation, and acceptance stays with the workflow. New outcomes enter the next snapshot and never change the active strategy after each task; trained estimators or calibration artifacts ship as separately reviewed versions.
 
 ### R13 Cost, privacy, extensions
 
@@ -237,5 +237,10 @@ Added 2026-10-01 from the operator decisions of 2026-09-30:
 - The evidence format is `spec/evidence-format.md`. It supersedes the module placement proposed in STORY-260908-15logt.
 - Headroom is a soft ordering inside interchangeable groups, and stale means unknown (`spec/headroom.md`).
 - Delivery runs as parallel workstreams (`spec/track.md`).
+
+Added 2026-10-01 from the KV-cache track (ruling tb-R97; wiki `research/kv-cache-orchestration/ARCHITECTURE.md`, Q9 settled with the LP owner):
+
+- R12's KV outcome is `warm|restored|cold`, or `unknown` with a reason code, measured from the attributed main request's usage. LP-D10 is amended to the same wording on the LP side.
+- KV state never admits and never refuses a candidate, by the principle of LP-D9 and R2: a missing or failed KV state is a reported cold prefill. Its router terms are slice K4 in `spec/track.md`, which waits for K2a telemetry.
 
 Remaining for the implementing session (record why when choosing): the first judgment backend (Jev vs structured LLM), the initial evidence sources beyond Bug Hunt, and the `--routing-decision` flag name.

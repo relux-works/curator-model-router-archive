@@ -13,6 +13,7 @@ Status: **DRAFT**, 2026-09-23, updated 2026-10-01.
 - slices A0 and A1 belong to milestone M4. The task-board half of A0 is the agent-selection resolver; the router half is W0 and W1.
 - Availability per profile, which the usage records of W3 feed, is M5b.
 - Slices B to E are M8.
+- Slice K4, the router terms of the KV-cache track, is M8, after K2a (M5b).
 
 ## Why
 
@@ -77,6 +78,7 @@ The slices of `model-routing.md` §3, mapped to workstreams:
 | C | semantic assessment in shadow mode (Jev or a structured LLM, chosen explicitly) | later | M8 |
 | D | opt-in selection at spawn, two-phase validation, effective-configuration proof | later, needs W5 | M8 |
 | E | calibration and measured gain on own tasks | later | M8 |
+| K4 | KV-cache routing terms: a `kv_state`/`kv_tokens` operational fact read from availability and never an admission input (no `ensure`, no reservation); a prefill cost term for `local` candidates; `kv_outcome` feedback (`warm\|restored\|cold`, or `unknown` with a reason code, from the attributed main request's usage); the KV cache type in the execution fingerprint. No code until K2a telemetry exists. | router (W1, then W5) | M8, after K2a telemetry |
 
 ## Repository
 
