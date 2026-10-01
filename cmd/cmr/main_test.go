@@ -16,8 +16,8 @@ func TestRun(t *testing.T) {
 	}{
 		{"version", []string{"version"}, 0, "cmr 0.0.0-w0\n", ""},
 		{"version json", []string{"version", "--json"}, 0, "{\"version\":\"0.0.0-w0\"}\n", ""},
-		{"help", []string{"help"}, 0, "Usage: cmr <command> [--json]\n\nCommands:\n  help              Show help\n  version           Show version\n  route             Route a frozen input bundle\n  explain           Explain a recorded decision\n  replay            Replay a recorded decision\n  headroom explain  Explain a usage snapshot\n", ""},
-		{"help json", []string{"help", "--json"}, 0, "{\"commands\":[\"help\",\"version\",\"route\",\"explain\",\"replay\",\"headroom explain\"]}\n", ""},
+		{"help", []string{"help"}, 0, "Usage: cmr <command> [--json]\n\nCommands:\n  help              Show help\n  version           Show version\n  route             Route a frozen input bundle\n  explain           Explain a recorded decision\n  replay            Replay a recorded decision\n  headroom explain  Explain a usage snapshot\n  evidence          Import and inspect evidence (import, ls, show, unresolved, rebind)\n  note              Add or retract an internal note\n  suitability       Derive the role-suitability view\n", ""},
+		{"help json", []string{"help", "--json"}, 0, "{\"commands\":[\"help\",\"version\",\"route\",\"explain\",\"replay\",\"headroom explain\",\"evidence\",\"note\",\"suitability\"]}\n", ""},
 		{"unknown", []string{"bad"}, 2, "", "cmr_unknown_subcommand: unknown subcommand: bad\n"},
 		{"unknown json", []string{"bad", "--json"}, 2, "{\"error\":{\"code\":\"cmr_unknown_subcommand\",\"message\":\"unknown subcommand: bad\"}}\n", ""},
 		{"invalid", []string{"version", "bad"}, 2, "", "cmr_invalid_arguments: usage: cmr version [--json]\n"},

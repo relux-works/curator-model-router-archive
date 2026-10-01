@@ -28,6 +28,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runReplay(args[1:], stdout, stderr)
 	case "headroom":
 		return runHeadroom(args[1:], stdout, stderr)
+	case "evidence":
+		return runEvidence(args[1:], stdout, stderr)
+	case "note":
+		return runNote(args[1:], stdout, stderr)
+	case "suitability":
+		return runSuitability(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
