@@ -1,7 +1,14 @@
 name: CI
+# Manual only while the repository is private. wiki decisions.md
+# (2026-09-24, CI runners) sets the policy that CI for private repositories
+# runs only on our own runners; hosted runs currently succeed here, so this is
+# policy, not a technical block. A manual dispatch still uses the hosted
+# runners below. Until the operator decides where this CI runs (the
+# self-hosted pool, publication of the repository, or hosted runners),
+# automatic triggers stay off and every landing runs the same checks locally
+# (gofmt, go vet, go test, go test -race, go mod tidy, actionlint).
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -9,8 +16,6 @@ concurrency:
   cancel-in-progress: true
 env:
   GOTOOLCHAIN: local
-# The repo is private and private repos get org runners only; this workflow
-# intentionally uses GitHub-hosted runners and may not run until visibility is decided.
 jobs:
   test:
     strategy:
