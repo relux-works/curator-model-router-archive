@@ -20,6 +20,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runHelp(nil, stdout, stderr)
 	}
 	switch args[0] {
+	case "route":
+		return runRoute(args[1:], stdout, stderr)
+	case "explain":
+		return runExplain(args[1:], stdout, stderr)
+	case "replay":
+		return runReplay(args[1:], stdout, stderr)
+	case "headroom":
+		return runHeadroom(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(args[1:], stdout, stderr)
 	case "help", "--help", "-h":

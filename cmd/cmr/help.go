@@ -13,9 +13,9 @@ func runHelp(args []string, stdout, stderr io.Writer) int {
 	if hasJSON(args) {
 		err = json.NewEncoder(stdout).Encode(struct {
 			Commands []string `json:"commands"`
-		}{[]string{"help", "version"}})
+		}{[]string{"help", "version", "route", "explain", "replay", "headroom explain"}})
 	} else {
-		_, err = io.WriteString(stdout, "Usage: cmr <command> [--json]\n\nCommands:\n  help     Show help\n  version  Show version\n")
+		_, err = io.WriteString(stdout, "Usage: cmr <command> [--json]\n\nCommands:\n  help              Show help\n  version           Show version\n  route             Route a frozen input bundle\n  explain           Explain a recorded decision\n  replay            Replay a recorded decision\n  headroom explain  Explain a usage snapshot\n")
 	}
 	if err != nil {
 		return writeRefusal(&Refusal{Code: "cmr_output_failed", Message: "could not write help"}, hasJSON(args), stdout, stderr)
