@@ -27,11 +27,33 @@ func (ConfigOrderStrategy) Select(s CandidateSnapshot, _ EvaluationSnapshot, _ R
 // taken from the base order, never the storage order of the snapshot.
 type HeadroomStrategy struct{ Base SelectionStrategy }
 
+// qualityHeadroomStrategy runs the base before partition requirements and guards
+// every movable subscription subgroup before reusing the historical slot logic.
+type qualityHeadroomStrategy struct{ Base SelectionStrategy }
+
+func (qualityHeadroomStrategy) selectorVersion() string { return QualitySelectorVersion }
+
+// Preserve a versioned base's validation order through public wrapper nesting.
+func (h HeadroomStrategy) selectorVersion() string {
+	if base, ok := h.Base.(interface{ selectorVersion() string }); ok {
+		return base.selectorVersion()
+	}
+	return SelectorVersion
+}
+
+func (h qualityHeadroomStrategy) Select(s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, t TaskEnvelope) (SelectionResult, error) {
+	r, _, err := (HeadroomStrategy{Base: h.Base}).evaluateVersion(s, e, p, t, true)
+	return r, err
+}
+
 func (h HeadroomStrategy) Select(s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, t TaskEnvelope) (SelectionResult, error) {
 	r, _, err := h.evaluate(s, e, p, t)
 	return r, err
 }
 func Strategy(p RoutingPolicy) (SelectionStrategy, error) {
+	if err := validateQualitySelectorInput(nil, nil, p, SelectorVersion, nil); err != nil {
+		return nil, err
+	}
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -81,6 +103,9 @@ type CandidateExplanation struct {
 	ReasonCodes   []ReasonCode        `json:"reason_codes"`
 	Credits       *Credits            `json:"credits,omitempty"`
 	FinalPosition *int64              `json:"final_position,omitempty"`
+	Estimate      *Estimate           `json:"estimate,omitempty"`
+	Quality       *QualityExplanation `json:"quality,omitempty"`
+	Cost          *CostExplanation    `json:"cost,omitempty"`
 }
 type Explanation struct {
 	Outcome             OutcomeKind            `json:"outcome,omitempty"`
@@ -248,14 +273,27 @@ func quantities(c ExecutionCandidate, pos int64, s CandidateSnapshot, p Headroom
 	return x
 }
 func (h HeadroomStrategy) evaluate(s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, t TaskEnvelope) (SelectionResult, Explanation, error) {
+	return h.evaluateVersion(s, e, p, t, p.Quality != nil || h.selectorVersion() == QualitySelectorVersion)
+}
+
+func (h HeadroomStrategy) evaluateVersion(s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, t TaskEnvelope, quality bool) (SelectionResult, Explanation, error) {
 	ex := Explanation{SchemaVersion: s.SchemaVersion, AsOf: s.AsOf, Candidates: []CandidateExplanation{}}
-	if err := s.Validate(); err != nil {
+	version := SelectorVersion
+	if quality {
+		version = QualitySelectorVersion
+	}
+	if err := validateQualitySelectorInput(&s, &e, p, version, nil); err != nil {
 		return SelectionResult{}, ex, err
 	}
-	if err := p.Validate(); err != nil {
-		return SelectionResult{}, ex, err
+	if !quality {
+		if err := s.Validate(); err != nil {
+			return SelectionResult{}, ex, err
+		}
+		if err := p.Validate(); err != nil {
+			return SelectionResult{}, ex, err
+		}
 	}
-	if p.Headroom.Equivalence == FitnessBand {
+	if !quality && p.Headroom.Equivalence == FitnessBand {
 		if e.EstimatorPartition == nil {
 			return SelectionResult{}, ex, fail(HeadroomPartitionRequired, "fitness-band requires an estimator partition")
 		}
@@ -279,6 +317,11 @@ func (h HeadroomStrategy) evaluate(s CandidateSnapshot, e EvaluationSnapshot, p 
 	}
 	if len(base.Order) == 0 {
 		return base, ex, nil
+	}
+	if quality {
+		if err := validateQualityHeadroomComposition(s, e, p, base); err != nil {
+			return SelectionResult{}, ex, err
+		}
 	}
 	order := make([]RankedCandidate, len(base.Order))
 	copy(order, base.Order)

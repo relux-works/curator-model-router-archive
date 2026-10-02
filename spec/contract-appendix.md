@@ -174,8 +174,11 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
     Singleton groups are valid; `groups:[]` is valid only for empty candidates
     and estimates. Bad schema, empty groups, overlap, extra/missing members, or
     a non-bijective estimate set are `routing_invalid_estimator_partition` in
-    C2. The dedicated `routing_estimate_set_mismatch` is reserved for the
-    separate C-quality-cost change.
+    C2. Under `router-quality-v1`, C-quality-cost uses the dedicated
+    `routing_estimate_set_mismatch` at the selector evaluation boundary before
+    checking partition membership, including config-order without a floor.
+    Historical `router-core-v1` C2 refusals
+    retain `routing_invalid_estimator_partition`.
     Partition estimator version MUST be supported (`suitability-bp-v1` in C2)
     and equal every estimate version. Evaluation validation also requires a
     matching `evaluator_versions` entry named `fitness-estimator`; bundle
@@ -187,7 +190,8 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
     it never rebuilds groups from fitness, coverage or quota `band_width_bp`.
     Only subscription members permute over their existing base slots; metered,
     local, singleton and ungrouped slots stay fixed. Without the partition,
-    retain `headroom_partition_required` before calling the base strategy.
+    retain `headroom_partition_required` before calling the base strategy under
+    `router-core-v1`. The new selector calls the base first, as rule 13 specifies.
     Estimation replay (owned by the subsequent evidence implementation) MUST
     regenerate and compare a stored partition before selection; a valid
     substituted membership is a replay difference at
@@ -196,6 +200,172 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
     Producer bucket/label and estimation-replay expectations are frozen in
     `pkg/routing/testdata/c2/` as contract fixtures; they do not implement the
     estimator, quality selector or evidence-owned estimation replay.
+
+
+13. C-quality-cost adds optional `RoutingPolicy.quality`, `RoutingPolicy.cost`
+    and `EvaluationSnapshot.costs`. Defaults leave all three absent; all prior
+    canonical bytes/digests, including floorless historical strategy-name policy
+    fixtures, remain identical. Absent members are omitted, never null. Present
+    members follow exact JSON tags, strict integer decoding, ordering and digest
+    rules. `ValidateForVersion` enforces selector-specific policy requirements;
+    `Validate`/`Digest` also accept historical floorless policies. Historical
+    `Strategy` remains the core selector; `StrategyForVersion` dispatches new work.
+
+    `quality` is `{rubric_id, rubric_version, estimator_version, scale,
+    minimum_fitness_bp, minimum_coverage_bp}`. Both integer threshold keys MUST
+    be present in strict loaders, even for zero; neither threshold has a default.
+    Thresholds are independently inclusive in 0..10000. Scale MUST be
+    `role-utility-bp-v1`; supported estimator is `suitability-bp-v1`. Known rubric
+    id/version MUST equal the frozen evaluation rubric. All estimates,
+    `fitness-estimator` evaluation provenance and bundle estimator version MUST
+    match the bound estimator. Every assessment's canonical requirements MUST
+    equal the rubric requirements projection. Unknown fitness/coverage fails
+    even a zero floor. Invalid estimates or bindings refuse, never abstain.
+
+    `cost` is `{version, model_version, billing_order}`. Supported comparator is
+    `billing-lex-v1`; known frozen model version MUST equal `costs.model_version`.
+    `billing_order` is REQUIRED, non-nil and semantic, never sorted or deduplicated
+    by loaders. `[]` supplies no cross-class preference; nonempty MUST be an exact
+    permutation of `local`, `subscription`, `metered` in operator-declared order.
+    No cross-class preference or numeric floor is invented while F1/F3 are pending.
+
+    `costs` is `{schema_version:"routing-costs-v1", model_version, candidates}`.
+    Rows are REQUIRED, ordered by candidate id, exactly one per admitted candidate.
+    Each `CandidateCost` row is `{candidate_id, api_usd_micros?, quota_demand_bp?,
+    quota_unit?, latency_ms?, engine_occupancy_ms?, start_ms?, source}`. Quantities
+    are integers in 0..10^15, including zero. Source MUST carry public known
+    name/version and a strict SHA-256 digest. `quota_unit` is present exactly when
+    quota demand is present and MUST be a nonempty known domain. Unknown forecasts
+    retain the id/source row with omitted quantities. Reject class-inapplicable
+    quantities; perform no currency, quota or resource conversions.
+
+    `router-quality-v1` implements both new bases. Both require explicit quality;
+    cost-with-floor also requires policy and snapshot cost. Quality-first forbids
+    cost policy; config-order forbids quality and cost policy but may retain unused
+    evaluation forecasts. These restrictions also apply to the public versionless
+    `Strategy` factory and `HeadroomStrategy` wrapper, regardless of whether
+    headroom is enabled. Floorless historical strategy-name refusals are unchanged.
+    Empty admission returns `no_eligible_candidates` before
+    quality evaluation/partition checks. Otherwise estimates cover admission
+    exactly. Let P be candidates passing both floors. Empty P abstains with
+    `quality_floor_unmet` and no order. Quality-first sorts P by descending fitness,
+    descending coverage, lexical id, then appends failing/unknown candidates by id.
+
+    Cost-with-floor first compares complete tuples among P: metered
+    `(api_usd_micros, latency_ms)`, subscription `(quota_demand_bp, latency_ms)`
+    under an equal quota unit, local `(engine_occupancy_ms, start_ms, latency_ms)`.
+    All tuple dimensions are required. All incomplete costs abstain `cost_unknown`;
+    mixed complete classes without declared priority or different complete
+    subscription units abstain `cost_incomparable`. Complete candidates sort by
+    class position, ascending tuple, descending fitness/coverage, lexical id.
+    Passing incomplete-cost candidates follow by descending fitness/coverage/id;
+    the failing/unknown tail follows by id. Every success is a total permutation
+    with consecutive positions; a cheaper failing candidate cannot win.
+
+    New reasons are `quality_floor_applied`, `fitness_unknown`,
+    `quality_below_floor`, `coverage_below_floor`, `quality_floor_unmet`,
+    `quality_first_ordered`, `cost_with_quality_floor_ordered`, `cost_unknown`,
+    `cost_incomparable`. New routing refusals are
+    `routing_quality_policy_required`, `routing_quality_version_mismatch`,
+    `routing_estimate_set_mismatch`, `routing_cost_policy_required`,
+    `routing_invalid_cost`, `routing_cost_version_mismatch`,
+    `headroom_quality_floor_conflict`, `headroom_cost_knownness_conflict`,
+    `routing_selection_mismatch`.
+    For all nonempty evaluations under `router-quality-v1`, check the admitted
+    estimate bijection before partition membership for every base, including
+    config-order without a quality policy or partition. Present cost rows must cover
+    the admitted set and be valid even when no partition or floor is present.
+    One shared input validator checks policy, structural evaluation, estimate
+    bijection, present partition, floor/version bindings and present/required
+    cost rows at every quality evaluation boundary. A missing, extra or substituted
+    estimate
+    refuses with `routing_estimate_set_mismatch`; `router-core-v1` retains the
+    historical `routing_invalid_estimator_partition` refusal.
+    Direct `StrategyForVersion` selection enforces the same boundary with headroom
+    enabled or disabled. A public `HeadroomStrategy` wrapping a versioned base
+    retains that selector's validation order, including through nested wrappers.
+    The versionless `Strategy` factory continues to dispatch `router-core-v1`.
+    Existing structural/canonical, invalid-estimate, invalid-policy and C2 codes
+    retain their meanings. Floor decisions always carry `quality_floor_applied`;
+    `BaselineFallback` rejects that marker or the existing mandatory-floor flag.
+    Floor, cost and reserve abstentions cannot unlock fallback, even with the
+    bundle flag omitted/false and all reason codes explicitly allowed.
+
+    New-version headroom calls the base first and passes abstention through before
+    requiring a partition. Resolve groups using the configured source only. Each
+    movable subscription subgroup MUST be homogeneous in floor pass/fail; passing
+    cost-with-floor members also MUST share complete/incomplete cost status. Refuse
+    either conflict; never split groups, drop members or re-bin around floors.
+    One shared composition validator applies these checks in headroom evaluation.
+    Under `router-quality-v1`, BuildDecision re-runs StrategyForVersion and Select
+    on the same frozen task, snapshot, evaluation and policy, including the final
+    headroom wrapper when enabled. It refuses a structurally valid supplied
+    SelectionResult that differs from that recomputation with the typed code
+    `routing_selection_mismatch`. Equality covers the entire result: ordered ids,
+    current and optional base positions, ordered reason codes, and abstention
+    presence/reason. Recomputed strategy/input/composition refusals take precedence
+    over this mismatch. The rule also applies with headroom disabled and to
+    config-order under the new selector. It never calls Route or BuildDecision
+    recursively. BuildDecision records the strategy decision BEFORE fallback:
+    an abstention remains `abstain` with origin `router`, regardless of fallback
+    authorization in DecisionOptions. Route runs strategy -> BuildDecision ->
+    optional BaselineFallback. That separate transformation records a selected
+    decision with origin `baseline_after_abstain`, the original abstention reasons
+    and a new content id; it cannot bypass either floor guard.
+    Replay under `router-quality-v1` follows the recorded stage. A stored `router`
+    decision replays strategy and builder without fallback, even if the bundle
+    authorizes it. A stored `baseline_after_abstain` decision also applies fallback
+    with the same bound snapshot, recorded selected variant as its baseline input,
+    authorized reasons and floor inputs. The public fallback seam permits any
+    identical admitted variant; replay never substitutes the first configuration
+    candidate for a different explicitly recorded baseline.
+    Accepted builder decisions replay equally; finalized decisions are compared
+    to finalized Route results. Mode off still skips decision construction;
+    `router-core-v1` retains historical BuildDecision behavior byte-for-byte.
+    Base abstention and empty admission retain precedence. Standalone base
+    comparators and LoadBundle's input validation do not apply wrapper semantics.
+    The public versionless `HeadroomStrategy` also applies these guards when
+    supplied a bound quality policy. It validates the bound evaluation
+    before invoking any injected base, including an abstaining base. Empty
+    admission still skips evaluation validation, and base abstention still
+    precedes the requirement to supply an absent fitness-band partition.
+    Local/metered/ungrouped slots stay fixed.
+    Subscription slots keep base positions
+    and use the historical headroom comparator. All-reserved still quantifies over
+    the whole admitted set. Within declared equivalence, headroom may override cost
+    tuples; the composed order does not promise a global cost minimum.
+
+    Route, BuildDecision, Explain, ExplainDecision and Replay use the stored
+    selector version, including internal explanation calls. `router-core-v1`
+    keeps historical behavior/refusals/explanations; unsupported versions retain
+    `routing_selector_version_mismatch`. Quality/cost policy requires the new
+    selector. DecisionBundle's shape is unchanged; decisions bind every new member
+    through policy/evaluation digests and content identity. Selection replay uses
+    stored forecasts and never re-estimates costs.
+
+    New structured explain adds optional exact `estimate`, `quality` as
+    `{passes_floor, reason_codes}`, and `cost` as `{estimate, complete,
+    comparison_unit?}`. Cost is emitted exactly when a bound candidate row exists,
+    including wholly unknown or unused baseline forecasts. Cost estimate is the
+    entire row with omissions, explicit zero and source preserved. Complete means
+    every class tuple member/unit is present; it does not assert comparability.
+    Emit comparison unit exactly for complete costs: `usd-micros` for metered,
+    the exact quota unit for subscription, `milliseconds` for local. Human explain
+    renders these structured values. Abstention has no final positions; existing
+    required base-position display fields use configuration positions when no base
+    order exists. No measurement provenance is inferred from utility scores.
+
+    CQ fixtures in `pkg/routing/testdata/cq/` contain full canonical bundles,
+    policy/evaluation/decision/explanation bytes and SHA-256 digests. Decision
+    content ids omit the id; decision document digests include it. Expected bytes
+    were independently authored with literal result shapes and Python JSON/SHA-256;
+    tests only compare. The test floors 6000/5000 are illustrative inputs.
+
+| CQ vector | Policy digest | Evaluation digest | Decision content id |
+| --- | --- | --- | --- |
+| `quality-first` | `sha256:76ed477c2bc62266a3e122bd6d44ea5b26244f25bdd1d873f9b913d65f83caae` | `sha256:7be6ed0dde7f6897dca661bafd06ca2722b9e1cd1e01641c3492ff50d33f085d` | `sha256:42ed8c247fffce900cf81a60f3eeb6a1231773a3797ea1cebbc9aca35fd2e356` |
+| `cost-with-quality-floor` | `sha256:90a8f707e74bed6c809be1131626dfaf09d32a08575d09c1b28cb27a44a50c0b` | `sha256:7be6ed0dde7f6897dca661bafd06ca2722b9e1cd1e01641c3492ff50d33f085d` | `sha256:d43f572a474361629765a1aedb9580ce30bde935fa8babbf62bbd969cf3509a2` |
+| `headroom-slots` | `sha256:8214769aa15a538fcc03559a4351377384df6ef9cf1fe28672ca0c466deee968` | `sha256:37c9a729486accfbf068df618647f67953562980de416afe4ecca64a2ac3d522` | `sha256:2f80340fc3755e4cb0c1c283fa5c3392b19b690d5ee1e240abc7a9f72c3e5365` |
 
 Vectors live in `pkg/canonical/testdata/vectors/`: `.input.json`, exact
 `.canonical.json` bytes (no newline), `.digest`, or `.error` for a refusal.

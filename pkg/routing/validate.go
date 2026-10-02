@@ -149,6 +149,15 @@ func checkAddresses(refs []string, allowRetraction bool) error {
 	return nil
 }
 func (v EvaluationSnapshot) Validate() error {
+	if err := v.validateContent(); err != nil {
+		return err
+	}
+	return v.validatePartition()
+}
+
+// validateContent keeps structural and estimate checks independent of partition
+// membership so quality selection can first bind estimates to admission.
+func (v EvaluationSnapshot) validateContent() error {
 	if err := validateFields(v); err != nil {
 		return err
 	}
@@ -168,6 +177,15 @@ func (v EvaluationSnapshot) Validate() error {
 			return err
 		}
 	}
+	if v.Costs != nil {
+		if err := v.Costs.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v EvaluationSnapshot) validatePartition() error {
 	if v.EstimatorPartition != nil {
 		// An evaluation can check its own estimate set; admitted membership is
 		// checked later against the candidate snapshot at the bundle boundary.

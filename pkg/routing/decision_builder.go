@@ -50,7 +50,7 @@ func LoadBundle(raw []byte) (DecisionBundle, error) {
 	if err := decodeStrict(raw, &wire); err != nil {
 		return DecisionBundle{}, err
 	}
-	p, err := LoadPolicy(wire.Policy)
+	p, err := loadPolicy(wire.Policy, wire.Versions.SelectorVersion != SelectorVersion)
 	if err != nil {
 		return DecisionBundle{}, err
 	}
@@ -61,7 +61,7 @@ func LoadBundle(raw []byte) (DecisionBundle, error) {
 	// Mode off evaluates nothing (decision-bundle.md, R7), so the partition
 	// boundary is checked only where a strategy runs or a decision is built.
 	if b.Policy.Mode != ModeOff {
-		if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+		if err := validateBundleBoundary(b); err != nil {
 			return b, err
 		}
 	}
@@ -105,13 +105,14 @@ func LoadDecision(raw []byte) (RoutingDecision, error) {
 	return d, d.Validate()
 }
 
-// BuildDecision binds the result to all frozen inputs. Alternatives carry base
-// positions, while structured explain carries final positions.
+// BuildDecision binds the strategy result to all frozen inputs before fallback.
+// Abstention stays abstention even when options authorize a later BaselineFallback.
+// Alternatives carry base positions, while structured explain carries final positions.
 func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, r SelectionResult, o DecisionOptions) (*RoutingDecision, error) {
 	if p.Mode == ModeOff {
 		return nil, nil
 	}
-	if err := validatePartitionBoundary(e, s.Candidates, o.EstimatorVersion); err != nil {
+	if err := validateBundleBoundary(DecisionBundle{Envelope: t, Snapshot: s, Evaluation: e, Policy: p, Versions: o}); err != nil {
 		return nil, err
 	}
 	if err := p.Validate(); err != nil {
@@ -119,6 +120,21 @@ func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p 
 	}
 	if err := r.ValidateAgainst(s.Candidates); err != nil {
 		return nil, err
+	}
+	if o.SelectorVersion == QualitySelectorVersion {
+		// Bind the supplied result to the versioned final selection, including
+		// headroom, abstention and reasons, without recursing through Route.
+		strategy, err := StrategyForVersion(p, o.SelectorVersion)
+		if err != nil {
+			return nil, err
+		}
+		expected, err := strategy.Select(s, e, p, t)
+		if err != nil {
+			return nil, err
+		}
+		if !reflect.DeepEqual(r, expected) {
+			return nil, fail(RoutingSelectionMismatch, "supplied selection differs from the versioned frozen selection")
+		}
 	}
 	td, err := t.Digest()
 	if err != nil {
@@ -146,7 +162,7 @@ func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p 
 	if err != nil {
 		return nil, err
 	}
-	if o.SelectorVersion != SelectorVersion {
+	if o.SelectorVersion != SelectorVersion && o.SelectorVersion != QualitySelectorVersion {
 		return nil, fail("routing_selector_version_mismatch", "unsupported selector version")
 	}
 	d := RoutingDecision{SchemaVersion: t.SchemaVersion, TaskEnvelopeDigest: td, RoleContextDigest: rd, CandidateSnapshotDigest: sd, EvaluationSnapshotDigest: ed, RoutingPolicyDigest: pd, AssessorVersion: o.AssessorVersion, EstimatorVersion: o.EstimatorVersion, SelectorVersion: o.SelectorVersion, SelectionOrigin: OriginRouter, ApplicabilityScope: o.ApplicabilityScope, PreparedAt: s.AsOf, ExpiresAt: o.ExpiresAt, Alternatives: []RankedCandidate{}, ReasonCodes: []ReasonCode{}, EvidenceRefs: slices.Clone(e.Measurements)}
@@ -173,8 +189,12 @@ func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p 
 		}
 		d.ReasonCodes = slices.Clone(r.Order[0].ReasonCodes)
 	}
+
+	if o.SelectorVersion == QualitySelectorVersion && p.Quality != nil {
+		d.ReasonCodes = addReason(d.ReasonCodes, ReasonQualityFloorApplied)
+	}
 	abstainReasons := map[string][]ReasonCode{}
-	if r.Abstention != nil && p.Headroom.Enabled {
+	if r.Abstention != nil && (p.Headroom.Enabled || o.SelectorVersion == QualitySelectorVersion) {
 		ex, explainErr := Explain(DecisionBundle{Envelope: t, Snapshot: s, Evaluation: e, Policy: p, Versions: o})
 		if explainErr != nil {
 			return nil, explainErr
@@ -232,6 +252,8 @@ func ApplyMode(mode Mode, d *RoutingDecision, baseline *ExecutionCandidate) (*Ex
 		return nil, fail("routing_unknown_enum", "unknown mode")
 	}
 }
+
+// Route runs the strategy, builds its decision, then optionally records fallback.
 func Route(b DecisionBundle) (RouteResult, error) {
 	var baseline *ExecutionCandidate
 	if len(b.Snapshot.ConfigOrder) > 0 {
@@ -245,10 +267,10 @@ func Route(b DecisionBundle) (RouteResult, error) {
 	if b.Policy.Mode == ModeOff {
 		return RouteResult{EffectiveCandidate: baseline}, nil
 	}
-	if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+	if err := validateBundleBoundary(b); err != nil {
 		return RouteResult{}, err
 	}
-	strategy, err := Strategy(b.Policy)
+	strategy, err := StrategyForVersion(b.Policy, b.Versions.SelectorVersion)
 	if err != nil {
 		return RouteResult{}, err
 	}
@@ -261,7 +283,7 @@ func Route(b DecisionBundle) (RouteResult, error) {
 		return RouteResult{}, err
 	}
 	if d != nil && d.Outcome == OutcomeAbstain && baseline != nil && len(b.Versions.BaselineFallbackReasons) > 0 {
-		fallback, fallbackErr := BaselineFallback(*d, b.Snapshot, *baseline, b.Versions.BaselineFallbackReasons, b.Versions.MandatoryEvidenceFloor)
+		fallback, fallbackErr := BaselineFallback(*d, b.Snapshot, *baseline, b.Versions.BaselineFallbackReasons, b.Versions.MandatoryEvidenceFloor || b.Policy.Quality != nil)
 		if fallbackErr != nil {
 			return RouteResult{}, fallbackErr
 		}
@@ -291,7 +313,7 @@ func BaselineFallback(d RoutingDecision, snapshot CandidateSnapshot, baseline Ex
 	if digest != d.CandidateSnapshotDigest || !admitted {
 		return RoutingDecision{}, fail("routing_fallback_not_allowed", "baseline does not match admitted snapshot")
 	}
-	if mandatoryFloor || d.Outcome != OutcomeAbstain || len(d.ReasonCodes) == 0 {
+	if mandatoryFloor || slices.Contains(d.ReasonCodes, ReasonQualityFloorApplied) || d.Outcome != OutcomeAbstain || len(d.ReasonCodes) == 0 {
 		return RoutingDecision{}, fail("routing_fallback_not_allowed", "baseline fallback is not allowed")
 	}
 	for _, reason := range d.ReasonCodes {
@@ -313,12 +335,24 @@ func BaselineFallback(d RoutingDecision, snapshot CandidateSnapshot, baseline Ex
 }
 
 func Explain(b DecisionBundle) (Explanation, error) {
-	if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+	if err := validateBundleBoundary(b); err != nil {
 		return Explanation{}, err
 	}
-	base, err := Strategy(b.Policy)
+	ex, err := explain(b)
+	if err == nil && b.Versions.SelectorVersion == QualitySelectorVersion {
+		ex = enrichQualityExplanation(ex, b)
+	}
+	return ex, err
+}
+
+func explain(b DecisionBundle) (Explanation, error) {
+	base, err := StrategyForVersion(b.Policy, b.Versions.SelectorVersion)
 	if err != nil {
 		return Explanation{}, err
+	}
+	if h, ok := base.(qualityHeadroomStrategy); ok {
+		_, ex, err := (HeadroomStrategy{Base: h.Base}).evaluateVersion(b.Snapshot, b.Evaluation, b.Policy, b.Envelope, true)
+		return ex, err
 	}
 	if h, ok := base.(HeadroomStrategy); ok {
 		_, ex, err := h.evaluate(b.Snapshot, b.Evaluation, b.Policy, b.Envelope)
@@ -331,7 +365,7 @@ func Explain(b DecisionBundle) (Explanation, error) {
 	if err != nil {
 		return Explanation{}, err
 	}
-	ex := Explanation{SchemaVersion: b.Snapshot.SchemaVersion, AsOf: b.Snapshot.AsOf, Candidates: []CandidateExplanation{}}
+	ex := Explanation{SchemaVersion: b.Snapshot.SchemaVersion, AsOf: b.Snapshot.AsOf, Candidates: []CandidateExplanation{}, Abstention: r.Abstention}
 	for i, ranked := range r.Order {
 		var c ExecutionCandidate
 		for _, candidate := range b.Snapshot.Candidates {
@@ -364,6 +398,16 @@ func (ex Explanation) RenderHuman() string {
 			return fmt.Sprint(*v)
 		}
 		fmt.Fprintf(&out, "%s class=%s base=%d group=%s final=%s H=%s S=%s band=%d over=%t reserve=%t inflight=%d reasons=%v\n", x.CandidateID, x.BillingClass, x.BasePosition, x.Group, value(x.FinalPosition), value(x.Headroom), value(x.Slack), x.Band, x.Over, x.Reserve, x.Inflight, x.ReasonCodes)
+		if x.Estimate != nil {
+			fmt.Fprintf(&out, "  fitness=%s coverage=%s estimator=%s\n", value(x.Estimate.Fitness), value(x.Estimate.Coverage), x.Estimate.EstimatorVersion)
+		}
+		if x.Quality != nil {
+			fmt.Fprintf(&out, "  passes_floor=%t reasons=%v\n", x.Quality.PassesFloor, x.Quality.ReasonCodes)
+		}
+		if x.Cost != nil {
+			raw, _ := json.Marshal(x.Cost)
+			fmt.Fprintf(&out, "  cost=%s\n", raw)
+		}
 		for _, w := range x.Windows {
 			fmt.Fprintf(&out, "  %s scope=%s freshness=%s used=%s observed=%s reset=%s applicable=%t known=%t r=%s tau=%s s=%s\n", w.Window.ID, w.Window.Scope, w.Window.Freshness, value(w.Window.UsedBP), value(w.Window.ObservedAt), value(w.Window.ResetsAt), w.Applicable, w.Known, value(w.Remaining), value(w.TimeLeft), value(w.Slack))
 		}

@@ -184,6 +184,7 @@ type EvaluationSnapshot struct {
 	Estimates              []Estimate          `json:"estimates"`
 	EvaluatorVersions      []Provenance        `json:"evaluator_versions"`
 	EstimatorPartition     *EstimatorPartition `json:"estimator_partition,omitempty"`
+	Costs                  *CostSnapshot       `json:"costs,omitempty"`
 }
 
 // FitnessEstimator must be pure, deterministic, context-free, with no clock,

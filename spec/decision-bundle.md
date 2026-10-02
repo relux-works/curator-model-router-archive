@@ -33,8 +33,10 @@ are refused. Libraries consume bytes or immutable values and perform no I/O.
 digest hashes `{schema_version, role, context}` from the envelope; the complete
 envelope digest separately binds all task members. Assessor and estimator
 versions describe the stored evaluation, using `unknown` when absent. Selection
-only supports `router-core-v1`; another selector version is refused with
-`routing_selector_version_mismatch`.
+supports `router-core-v1` (config-order and the headroom wrapper, the
+historical behaviour) and `router-quality-v1` (adds `quality-first`,
+`cost-with-quality-floor` and fitness-band partitions, `spec/slice-b.md` §4–§5);
+any other selector version is refused with `routing_selector_version_mismatch`.
 
 Optional `versions.baseline_fallback_reasons` lists the named abstention reasons
 for which the caller explicitly authorizes baseline fallback. Omit it for no
@@ -44,6 +46,17 @@ fallback fields. Fallback requires a baseline identical to an admitted variant
 in the bound snapshot. It records a new content id, selected outcome, original
 abstention reason, and `baseline_after_abstain` origin, and replays from this
 bundle. It cannot bypass an evidence floor or a no-candidates outcome.
+
+For `router-quality-v1`, BuildDecision records the strategy result before
+fallback; authorized fallback never changes its `abstain` outcome or `router`
+origin. Route composes strategy -> BuildDecision -> optional BaselineFallback.
+Replay follows the stored origin: `router` replays without fallback;
+`baseline_after_abstain` replays the separate fallback using this bundle's
+snapshot, recorded selected variant as the fallback baseline, authorized
+reasons and mandatory-floor inputs. The quality policy itself also imposes a
+floor, even when the adapter flag is false.
+Pre-fallback and finalized decisions each have their own content identity.
+`router-core-v1` retains its historical replay behavior.
 
 Commands:
 
@@ -92,10 +105,10 @@ is enabled; `--role reviewer` applies the protected-role reserve behavior. It
 reads only the supplied snapshot and optional policy. It runs no probe and
 consults no clock, account, model, or live evidence.
 
-Unavailable capabilities return typed routing refusals:
-`routing_strategy_not_implemented` for the two slice-B base strategies, and
-`headroom_partition_required` for fitness-band without a versioned estimator
-partition. The default wrapper preserves all non-subscription and ungrouped
+Under `router-core-v1` the two slice-B base strategies are refused with
+`routing_strategy_not_implemented`; under `router-quality-v1` they run per
+`spec/slice-b.md` §4. Fitness-band without a versioned estimator partition is
+refused with `headroom_partition_required`. The default wrapper preserves all non-subscription and ungrouped
 slots. Same-pair grouping additionally requires identical execution members
 apart from candidate/binding/usage identity. A local or metered member prevents
 all-reserved abstention because the rule applies to the whole admitted set.
@@ -103,7 +116,8 @@ all-reserved abstention because the rule applies to the whole admitted set.
 `snapshot.config_order` is required and preserves the caller's declared candidate
 order while `snapshot.candidates` stays sorted by id. Both are hashed. The
 headroom wrapper fills `base_position` for every ranked candidate; decision
-alternatives retain it. Fitness partitions remain a frozen-contract limitation.
+alternatives retain it. Fitness-band groups come from the optional
+`evaluation.estimator_partition` (C2); without it fitness-band is refused.
 
 A model scope is unmapped only if no scope-map entry exists for that runtime and
 scope: it is ignored with `quota_scope_unmapped`. An existing entry excluding the

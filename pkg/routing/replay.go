@@ -18,10 +18,34 @@ type ReplayResult struct {
 
 // Replay compares JSON members recursively, preserving exact integer tokens.
 // Missing members are omitted in the difference rather than rendered as null.
+// Quality replay follows the stored stage: router decisions precede fallback;
+// baseline_after_abstain decisions include the bundle-authorized fallback.
 func Replay(b DecisionBundle, stored *RoutingDecision) (ReplayResult, error) {
+	if b.Policy.Mode != ModeOff {
+		if err := validateQualitySelectorInput(&b.Snapshot, &b.Evaluation, b.Policy, b.Versions.SelectorVersion, &b.Versions.EstimatorVersion); err != nil {
+			return ReplayResult{}, err
+		}
+	}
+	replayStage := b.Versions.SelectorVersion == QualitySelectorVersion && stored != nil &&
+		(stored.SelectionOrigin == OriginRouter || stored.SelectionOrigin == OriginBaselineAfterAbstain)
+	fallbackOptions := b.Versions
+	if replayStage {
+		// Rebuild the strategy decision before replaying any recorded fallback.
+		b.Versions.BaselineFallbackReasons = nil
+	}
 	recomputed, err := Route(b)
 	if err != nil {
 		return ReplayResult{}, err
+	}
+	if replayStage && stored.SelectionOrigin == OriginBaselineAfterAbstain && recomputed.Decision != nil && stored.SelectedCandidate != nil {
+		// The selected variant records BaselineFallback's baseline input. The
+		// public transformation permits any identical admitted snapshot variant.
+		fallback, err := BaselineFallback(*recomputed.Decision, b.Snapshot, *stored.SelectedCandidate,
+			fallbackOptions.BaselineFallbackReasons, fallbackOptions.MandatoryEvidenceFloor || b.Policy.Quality != nil)
+		if err != nil {
+			return ReplayResult{}, err
+		}
+		recomputed.Decision = &fallback
 	}
 	result := ReplayResult{Differences: []MemberDifference{}}
 	raw := func(v *RoutingDecision) json.RawMessage {
@@ -78,6 +102,9 @@ func compareMembers(path string, a, b json.RawMessage, diffs *[]MemberDifference
 
 // ExplainDecision refuses substituted inputs before rendering a stored decision.
 func ExplainDecision(b DecisionBundle, d RoutingDecision) (Explanation, error) {
+	if err := validateQualitySelectorInput(&b.Snapshot, &b.Evaluation, b.Policy, b.Versions.SelectorVersion, &b.Versions.EstimatorVersion); err != nil {
+		return Explanation{}, err
+	}
 	if err := d.VerifyContentID(); err != nil {
 		return Explanation{}, err
 	}

@@ -37,7 +37,7 @@ func runHeadroom(args []string, out, stderr io.Writer) int {
 	if role == "" {
 		role = routing.Unknown
 	}
-	ex, err := routing.Explain(routing.DecisionBundle{Snapshot: s, Policy: p, Envelope: routing.TaskEnvelope{Role: role}})
+	ex, err := routing.Explain(routing.DecisionBundle{Snapshot: s, Policy: p, Envelope: routing.TaskEnvelope{Role: role}, Versions: routing.DecisionOptions{SelectorVersion: routing.SelectorVersion}})
 	if err != nil {
 		return routeError(err, args, out, stderr)
 	}

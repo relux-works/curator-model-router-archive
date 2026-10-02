@@ -18,6 +18,7 @@ const (
 	ContractFreshnessMismatch   = "contract_freshness_mismatch"
 	ContractDecisionIDMismatch  = "contract_decision_id_mismatch"
 	EstimatorSnapshotMismatch   = "estimator_snapshot_mismatch"
+	RoutingSelectionMismatch    = "routing_selection_mismatch"
 )
 
 // NewEstimatorSnapshotMismatchError constructs the typed refusal when evidence

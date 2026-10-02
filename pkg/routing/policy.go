@@ -117,6 +117,8 @@ type RoutingPolicy struct {
 	Mode          Mode           `json:"mode"`
 	FreeFieldMask []FreeField    `json:"free_field_mask"`
 	Headroom      HeadroomPolicy `json:"headroom"`
+	Quality       *QualityPolicy `json:"quality,omitempty"`
+	Cost          *CostPolicy    `json:"cost,omitempty"`
 }
 
 // DefaultPolicy returns independent, fully materialized defaults. TODO(decision):
@@ -137,7 +139,9 @@ func DefaultPolicy(schemaVersion string) RoutingPolicy {
 // preserving explicit false/zero/empty values. Keys must exactly match JSON
 // tags. Operator-authored sets are sorted and de-duplicated before validation;
 // programmatic Validate still requires strictly ordered sets.
-func LoadPolicy(raw []byte) (RoutingPolicy, error) {
+func LoadPolicy(raw []byte) (RoutingPolicy, error) { return loadPolicy(raw, true) }
+
+func loadPolicy(raw []byte, qualityContracts bool) (RoutingPolicy, error) {
 	if _, err := canonical.Canonicalize(raw); err != nil {
 		return RoutingPolicy{}, err
 	}
@@ -156,7 +160,11 @@ func LoadPolicy(raw []byte) (RoutingPolicy, error) {
 	p.FreeFieldMask = normalizeSet(p.FreeFieldMask)
 	p.Headroom.ProtectedRoles = normalizeSet(p.Headroom.ProtectedRoles)
 	p.Headroom.Windows.IDs = normalizeSet(p.Headroom.Windows.IDs)
-	if err := p.Validate(); err != nil {
+	validate := p.validateCore
+	if qualityContracts {
+		validate = p.Validate
+	}
+	if err := validate(); err != nil {
 		return RoutingPolicy{}, err
 	}
 	return p, nil
@@ -165,6 +173,17 @@ func LoadPolicy(raw []byte) (RoutingPolicy, error) {
 // Validate validates a materialized policy. Programmatic callers construct it
 // with DefaultPolicy; zero numerics cannot mean "default" because zero is a value.
 func (p RoutingPolicy) Validate() error {
+	if err := p.validateCore(); err != nil {
+		return err
+	}
+	if p.Quality != nil || p.Cost != nil {
+		return p.validateQualityCost()
+	}
+	return nil
+}
+
+// validateCore preserves the pre-B policy checks for historical selection replay.
+func (p RoutingPolicy) validateCore() error {
 	if p.Headroom.Equivalence != DeclaredGroups && len(p.Headroom.Groups) != 0 {
 		return fail("headroom_groups_unused", "headroom.groups requires declared-groups equivalence")
 	}
@@ -323,6 +342,13 @@ func checkJSONKeys(value any, typ reflect.Type, path string) error {
 			}
 			if !found {
 				return fail(ContractUnknownField, path+"."+key+" is not a declared JSON tag")
+			}
+		}
+		if typ == reflect.TypeFor[QualityPolicy]() {
+			for _, key := range []string{"minimum_fitness_bp", "minimum_coverage_bp"} {
+				if _, exists := obj[key]; !exists {
+					return fail(ContractMissingField, path+"."+key+" is required")
+				}
 			}
 		}
 	case reflect.Slice:

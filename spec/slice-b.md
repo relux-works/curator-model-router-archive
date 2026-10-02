@@ -456,6 +456,16 @@ Reuse `routing_invalid_policy`, `routing_unknown_enum`,
 existing mandatory-floor flag. Floor, cost or reserve abstention under this
 policy cannot unlock fallback. No-candidates stays distinct.
 
+Under `router-quality-v1`, BuildDecision records the strategy's decision before
+fallback. An abstention remains `abstain` with `router` origin even when fallback
+is authorized. Route then optionally calls BaselineFallback, a separate recorded
+transition to `baseline_after_abstain` with its own content id and the original
+abstention reasons. Replay mirrors the stored stage: router decisions skip
+fallback; baseline-after-abstain decisions include it with the same frozen
+snapshot, recorded selected variant as baseline, authorization and floor inputs.
+Replay equality compares decisions at the same stage. Preserve historical
+`router-core-v1` behavior.
+
 ### 4.4 Headroom composition
 
 For `router-quality-v1`, call the base first. Pass abstention through unchanged

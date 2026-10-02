@@ -6,6 +6,15 @@ package routing
 type ReasonCode string
 
 const (
+	ReasonQualityFloorApplied               ReasonCode = "quality_floor_applied"
+	ReasonFitnessUnknown                    ReasonCode = "fitness_unknown"
+	ReasonQualityBelowFloor                 ReasonCode = "quality_below_floor"
+	ReasonCoverageBelowFloor                ReasonCode = "coverage_below_floor"
+	ReasonQualityFloorUnmet                 ReasonCode = "quality_floor_unmet"
+	ReasonQualityFirstOrdered               ReasonCode = "quality_first_ordered"
+	ReasonCostWithQualityFloorOrdered       ReasonCode = "cost_with_quality_floor_ordered"
+	ReasonCostUnknown                       ReasonCode = "cost_unknown"
+	ReasonCostIncomparable                  ReasonCode = "cost_incomparable"
 	ReasonConfigOrderPreserved              ReasonCode = "config_order_preserved"
 	ReasonNoEligibleCandidates              ReasonCode = "no_eligible_candidates"
 	ReasonCandidateDependentSettingMismatch ReasonCode = "candidate_dependent_setting_mismatch"

@@ -127,6 +127,11 @@ func (v EvaluationSnapshot) ValidateAgainst(candidates []ExecutionCandidate) err
 	if err := v.Validate(); err != nil {
 		return err
 	}
+	if v.Costs != nil {
+		if err := v.Costs.ValidateAgainst(candidates); err != nil {
+			return err
+		}
+	}
 	if v.EstimatorPartition != nil {
 		return v.EstimatorPartition.ValidateAgainst(candidates, v.Estimates)
 	}
