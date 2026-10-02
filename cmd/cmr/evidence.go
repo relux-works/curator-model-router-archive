@@ -129,6 +129,9 @@ func loadEvidenceStore(c evidenceFlags) (*evidence.Store, evidence.Registry, err
 	return s, r, err
 }
 func runEvidence(args []string, out, stderr io.Writer) int {
+	if isEvalRunCommand(args) {
+		return runEvalRun(args[1:], out, stderr)
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return writeRefusal(&Refusal{"cmr_invalid_arguments", "usage: cmr evidence import FILE | ls | show ID | unresolved | rebind --registry FILE [--json] [--store DIR]"}, hasJSON(args), out, stderr)
 	}

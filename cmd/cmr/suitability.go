@@ -17,11 +17,12 @@ func runSuitability(args []string, out, stderr io.Writer) int {
 	project := f.String("project-reqs", "", "RequirementsInput JSON")
 	candidateFile := f.String("candidates", "", "versioned candidate fingerprint document")
 	evaluated := f.String("evaluated-at", "", "frozen RFC3339 time")
+	derivationFile := f.String("derivation", "", "versioned Derivation JSON (default version 1)")
 	if err := parseEvidenceFlags(f, args); err != nil {
 		return evidenceRefusal(err, args, out, stderr)
 	}
 	if f.NArg() != 0 || *role == "" {
-		return writeRefusal(&Refusal{"cmr_invalid_arguments", "usage: cmr suitability --role ROLE [--project-reqs FILE] [--evaluated-at RFC3339] [--candidates FILE] [--store DIR] [--json]"}, c.json, out, stderr)
+		return writeRefusal(&Refusal{"cmr_invalid_arguments", "usage: cmr suitability --role ROLE [--project-reqs FILE] [--evaluated-at RFC3339] [--candidates FILE] [--derivation FILE] [--store DIR] [--json]"}, c.json, out, stderr)
 	}
 	s, r, err := loadEvidenceStore(c)
 	if err != nil {
@@ -80,7 +81,11 @@ func runSuitability(args []string, out, stderr io.Writer) int {
 	if at == "" {
 		at = time.Now().UTC().Format(time.RFC3339Nano)
 	}
-	view, err := evidence.Derive(snap, docs, r, req, evidence.DefaultDerivation(), candidates, at)
+	derivation, err := loadDerivation(*derivationFile)
+	if err != nil {
+		return evidenceRefusal(err, args, out, stderr)
+	}
+	view, err := evidence.Derive(snap, docs, r, req, derivation, candidates, at)
 	if err != nil {
 		return evidenceRefusal(err, args, out, stderr)
 	}
