@@ -44,6 +44,17 @@ func refusal(code, message string) error { return &Error{code, message} }
 // Marshal passes Go values through encoding/json, then canonicalizes them.
 // All required slices must be non-nil; optional unknown fields use omitempty.
 func Marshal(v any) ([]byte, error) {
+	return marshal(v, true)
+}
+
+// MarshalRecord canonicalizes an object without requiring schema_version.
+// All other canonical rules apply, with depth counted from the record root.
+// Every member, including id and a supplied schema_version, is retained.
+func MarshalRecord(v any) ([]byte, error) {
+	return marshal(v, false)
+}
+
+func marshal(v any, requireSchema bool) ([]byte, error) {
 	raw, err := json.Marshal(v)
 	if err != nil {
 		code := InvalidJSON
@@ -55,7 +66,7 @@ func Marshal(v any) ([]byte, error) {
 	if err := validGoStrings(reflect.ValueOf(v)); err != nil {
 		return nil, err
 	}
-	return Canonicalize(raw)
+	return canonicalize(raw, requireSchema)
 }
 
 // Canonicalize preserves signed/unsigned 64-bit integer tokens exactly, extending
@@ -63,6 +74,10 @@ func Marshal(v any) ([]byte, error) {
 // TODO(decision): plain integer tokens beyond both 64-bit domains are treated
 // as binary64 numbers, like decimal/exponent tokens; they are not contract ints.
 func Canonicalize(raw []byte) ([]byte, error) {
+	return canonicalize(raw, true)
+}
+
+func canonicalize(raw []byte, requireSchema bool) ([]byte, error) {
 	if err := validStrings(raw); err != nil {
 		return nil, err
 	}
@@ -77,10 +92,15 @@ func Canonicalize(raw []byte) ([]byte, error) {
 	}
 	object, ok := v.(map[string]any)
 	if !ok {
+		if !requireSchema {
+			return nil, refusal(InvalidJSON, "record root must be an object")
+		}
 		return nil, refusal(MissingSchemaVersion, "top level must be an object with schema_version")
 	}
-	if s, ok := object["schema_version"].(string); !ok || s == "" {
-		return nil, refusal(MissingSchemaVersion, "schema_version must be a non-empty string")
+	if requireSchema {
+		if s, ok := object["schema_version"].(string); !ok || s == "" {
+			return nil, refusal(MissingSchemaVersion, "schema_version must be a non-empty string")
+		}
 	}
 	return appendValue(nil, v)
 }
@@ -90,8 +110,22 @@ func Digest(v any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return digestBytes(b), nil
+}
+
+// RecordDigest returns sha256:<lowercase hex> over MarshalRecord's bytes.
+// It retains id; callers applying domain identity rules must omit it themselves.
+func RecordDigest(v any) (string, error) {
+	b, err := MarshalRecord(v)
+	if err != nil {
+		return "", err
+	}
+	return digestBytes(b), nil
+}
+
+func digestBytes(b []byte) string {
 	h := sha256.Sum256(b)
-	return "sha256:" + hex.EncodeToString(h[:]), nil
+	return "sha256:" + hex.EncodeToString(h[:])
 }
 
 // SortByKey explicitly normalizes a declared-key collection in place. Digesting

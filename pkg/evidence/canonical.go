@@ -1,49 +1,29 @@
 package evidence
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"github.com/relux-works/curator-model-router/pkg/canonical"
 	"strings"
+
+	"github.com/relux-works/curator-model-router/pkg/canonical"
 )
 
-// RecordAddress hashes exactly the canonical record without id. W0's encoder
-// requires schema_version on the root, so canonicalise a versioned envelope and
-// extract its already canonical record bytes before hashing (no envelope bytes
-// enter the address). TODO(contract): add canonical.RecordDigest for schema-less
-// nested records; retain the same null, Unicode and numeric validation.
+// RecordAddress hashes exactly the canonical record without its root id.
+// Validate the complete record before deleting id so invalid content is refused.
 func RecordAddress(prefix string, record any) (string, error) {
-	raw, err := canonical.Marshal(struct {
-		SchemaVersion string `json:"schema_version"`
-		Record        any    `json:"record"`
-	}{SchemaVersion, record})
+	raw, err := canonical.MarshalRecord(record)
 	if err != nil {
 		return "", err
 	}
-	var original struct {
-		Record map[string]json.RawMessage `json:"record"`
-	}
-	if err = json.Unmarshal(raw, &original); err != nil {
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(raw, &fields); err != nil {
 		return "", err
 	}
-	fields := original.Record
 	delete(fields, "id")
-	b, err := canonical.Marshal(struct {
-		SchemaVersion string                     `json:"schema_version"`
-		Record        map[string]json.RawMessage `json:"record"`
-	}{SchemaVersion, fields})
+	digest, err := canonical.RecordDigest(fields)
 	if err != nil {
 		return "", err
 	}
-	var env struct {
-		Record json.RawMessage `json:"record"`
-	}
-	if err = json.Unmarshal(b, &env); err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(env.Record)
-	return prefix + hex.EncodeToString(sum[:]), nil
+	return prefix + strings.TrimPrefix(digest, "sha256:"), nil
 }
 func validDigest(s string) bool {
 	if !strings.HasPrefix(s, "sha256:") || len(s) != 71 {

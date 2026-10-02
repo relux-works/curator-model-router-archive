@@ -17,6 +17,12 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
    digest fields follow the shape and unknown exceptions in rule 6. Numeric zero
    is a value, never an unknown marker. Unknown `used_bp`, fitness,
    coverage, and optional timestamps are represented by omitted pointer fields.
+   Record-root exception: `canonical.MarshalRecord` and `RecordDigest` require
+   an object (`{}` is valid), but neither require nor insert `schema_version`.
+   Every member, including `id` and any supplied `schema_version`, is retained;
+   evidence removes only the root `id` before hashing. All other rules apply.
+   Non-object record roots are `canonical_invalid_json`; null remains
+   `canonical_null`. Document helpers retain their schema requirement.
 2. Object keys MUST be sorted by unsigned UTF-16 code units, recursively, as in
    [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785). Strings MUST use JCS escaping:
    quote/backslash escaped, the five short control escapes, other U+0000–U+001F
@@ -25,6 +31,9 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
    lone surrogates, duplicate object keys, malformed JSON, and trailing data MUST
    be refused. Nesting MUST NOT exceed 1000 simultaneously open object/array
    containers, counting the root object; excess depth is `canonical_invalid_json`.
+   Record depth counts from its own root: depth 1000 is accepted and 1001
+   refused. This extends the former evidence envelope limit of 999 without
+   changing any previously valid record address.
 3. Integer tokens represent signed or unsigned 64-bit integers and MUST serialize
    exactly, including above 2^53. Other tokens are IEEE-754 binary64: ECMAScript
    shortest round-trip digits, ties to even, decimal notation for absolute values
@@ -183,6 +192,52 @@ stored as large JSON files; both array and object nesting boundaries are checked
 | `wrong-schema` | `canonical_missing_schema_version` |
 | `depth-999` (generated) | `sha256:8a3c9d6d78c6bb6b0f32aaa2b87e94244a6179ae703ec718be052759dd90c8e7` |
 | `depth-1000` (generated) | `sha256:d314e865c86cb2ecfffec871138a28151ca9dd7de3a4aadc9792f5d828c2c7ec` |
+| `depth-1001` (generated) | `canonical_invalid_json` |
+
+Record vectors live in `pkg/canonical/testdata/records/`, using the same file
+suffixes and exact-byte convention. Normal runs only compare; these expected
+bytes are independent literals or schema-stripped document vectors, and
+digests were calculated independently with SHA-256. `TestRecordDepthVectors`
+generates array, object and mixed record depths 999/1000/1001; the pinned
+digests below describe `{"nested":` followed by depth-minus-one arrays around
+`0`, then `}`. `TestRecordAddressGoldenCompatibility` compares every addressed
+evidence fixture record with the former envelope algorithm and checks stored
+addresses for valid vectors. Evidence goldens remain byte-identical.
+
+| Record vector | Digest or refusal |
+| --- | --- |
+| `array-top` | `canonical_invalid_json` |
+| `bool-top` | `canonical_invalid_json` |
+| `duplicate-id` | `canonical_duplicate_key` |
+| `duplicate-object` | `canonical_duplicate_key` |
+| `empty` (`{}`) | `sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` |
+| `escaped-duplicate` | `canonical_duplicate_key` |
+| `escapes` | `sha256:53e2b20e7a6b7b40902e242324734c8d1558849114fd71c187f05f088b7425cb` |
+| `float-boundaries` | `sha256:4a9b4bd6df18c057909bf483a9cf6159d077b8896063d00bfc9775582f6a67cb` |
+| `floats` | `sha256:7c892d3452ad85ad65857a43e8dcac93b79475d2334fc3e85bac5c599142c158` |
+| `integers` | `sha256:52dadc73f683a16f432c0c3b186408a1118b87cbcf6cf95f8fb786193046c1ae` |
+| `invalid-json` | `canonical_invalid_json` |
+| `invalid-utf8` | `canonical_invalid_json` |
+| `keys` | `sha256:c2985c5ba6f7d2a55e768f92490ca09388e95bc4cccb9fdf11b15f4d42f93e73` |
+| `lone-surrogate` | `canonical_invalid_json` |
+| `low-surrogate` | `canonical_invalid_json` |
+| `members` (`{"a":[2,1],"id":"keep","z":0}`) | `sha256:005479518424ec6600f1a6fa32365f8b8e1a1635eb0eedeba642da97114cd8e6` |
+| `multiple-values` | `canonical_invalid_json` |
+| `negative-zero` | `sha256:c8f4c040bb70540ca5df8ceefb53c9ebafbc251a1b668ef955d4b01daea0dce7` |
+| `nested` | `sha256:f453cd64380a6ab62d977c44a2d6519b8a84698817f833ea99147c7bdfa17b6b` |
+| `nonfinite` | `canonical_nonfinite` |
+| `null-top` | `canonical_null` |
+| `null` | `canonical_null` |
+| `number-top` | `canonical_invalid_json` |
+| `one` (`{"a":1}`) | `sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862` |
+| `ordered` | `sha256:2db54dc4fc276a3a0fa70944d73aac15d00cfbe5951535488ccfb1b9e6d3a92e` |
+| `schema-content` (`{"id":"keep","schema_version":false}`) | `sha256:da80743aa2ef13710af662221a3b64caa16317613907a3cbcc655f939df71011` |
+| `string-top` | `canonical_invalid_json` |
+| `surrogate-pair` | `sha256:f9949e1006d1ca22bc0b60ea94f09779f11a8f0a29bae250fc7ab313d879f5e7` |
+| `unicode-keys` | `sha256:62a2501b676fcdf774de8c5b88c032c0bcc863dcc9b589d8cf42f3b1b72b5f91` |
+| `unknown` | `sha256:7de97408ae96e55bb65d4faaa2cfc708a8039a6089c2b85e877bc2c1ba22c019` |
+| `depth-999` (generated) | `sha256:06ce5cbfd0a20f0b6e452865d766e1edb44add39dfbfc511980dbddee074e729` |
+| `depth-1000` (generated) | `sha256:62bc31a10cb369fcb297106db4d0ed0809d71f92d455fa52710e21fcf30e3549` |
 | `depth-1001` (generated) | `canonical_invalid_json` |
 
 Routing goldens live in `pkg/routing/testdata/`. The minimal-input default policy
