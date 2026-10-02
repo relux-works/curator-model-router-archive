@@ -1,765 +1,572 @@
 package evidence
 
 import (
-	"encoding/json"
-	"flag"
-	"fmt"
-	"github.com/relux-works/curator-model-router/pkg/canonical"
-	"github.com/relux-works/skill-agents-management/pkg/vendorplugin"
-	"go/ast"
-	"go/parser"
-	"go/token"
+	"bytes"
+	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/relux-works/curator-model-router/pkg/canonical"
+	"github.com/relux-works/skill-agents-management/pkg/vendorplugin/benchdata"
 )
 
-var updateEvidence = flag.Bool("update-evidence", false, "rewrite pinned evidence goldens from source data")
+// CMR_UPDATE_EVIDENCE=1 rewrites reviewed new-pin vectors only. An environment
+// switch works with the required evidence and CLI packages in the same command.
 
-// The module has no full data-only bench accessor. This independent static
-// exporter reads only pkg/vendorplugin source literals, never loads vendor exec
-// packages, and fails closed on new unsupported declarations. It is test-only;
-// production imports the versioned JSON export. No rows are copied by hand.
-type sourceExporter struct {
-	funcs  map[string]*ast.FuncDecl
-	values map[string]ast.Expr
-}
-
-func functionName(e ast.Expr) string {
-	switch x := e.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.SelectorExpr:
-		return x.Sel.Name
-	}
-	return ""
-}
-func literalString(e ast.Expr) (string, bool) {
-	x, ok := e.(*ast.BasicLit)
-	if !ok || x.Kind != token.STRING {
-		return "", false
-	}
-	s, err := strconv.Unquote(x.Value)
-	return s, err == nil
-}
-func literalNumber(e ast.Expr) (float64, bool) {
-	x, ok := e.(*ast.BasicLit)
-	if !ok {
-		return 0, false
-	}
-	n, err := strconv.ParseFloat(strings.ReplaceAll(x.Value, "_", ""), 64)
-	return n, err == nil
-}
-func (s sourceExporter) expand(e ast.Expr, env map[string]ast.Expr) ast.Expr {
-	seen := map[string]bool{}
-	for i := 0; i < 30; i++ {
-		id, ok := e.(*ast.Ident)
-		if !ok || seen[id.Name] {
-			return e
-		}
-		seen[id.Name] = true
-		if v, ok := env[id.Name]; ok {
-			e = v
-			continue
-		}
-		if v, ok := s.values[id.Name]; ok {
-			e = v
-			continue
-		}
-		return e
-	}
-	return e
-}
-func cloneEnv(env map[string]ast.Expr) map[string]ast.Expr {
-	x := map[string]ast.Expr{}
-	for k, v := range env {
-		x[k] = v
-	}
-	return x
-}
-func (s sourceExporter) body(call *ast.CallExpr, env map[string]ast.Expr) (*ast.BlockStmt, map[string]ast.Expr) {
-	fn := s.funcs[functionName(call.Fun)]
-	if fn == nil {
-		return nil, env
-	}
-	next := cloneEnv(env)
-	arg := 0
-	for _, field := range fn.Type.Params.List {
-		for _, name := range field.Names {
-			if arg < len(call.Args) {
-				next[name.Name] = s.expand(call.Args[arg], env)
-				arg++
-			}
-		}
-	}
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		a, ok := n.(*ast.AssignStmt)
-		if ok {
-			for i, name := range a.Lhs {
-				if id, ok := name.(*ast.Ident); ok && i < len(a.Rhs) {
-					next[id.Name] = a.Rhs[i]
-				}
-			}
-		}
-		return true
-	})
-	return fn.Body, next
-}
-func (s sourceExporter) text(e ast.Expr, env map[string]ast.Expr) (string, bool) {
-	e = s.expand(e, env)
-	if x, ok := literalString(e); ok {
-		return x, true
-	}
-	if functionName(e) == "BugHuntBenchFloor" {
-		return vendorplugin.BugHuntBenchFloor, true
-	}
-	return "", false
-}
-func (s sourceExporter) score(e ast.Expr, env map[string]ast.Expr, depth int) (float64, bool) {
-	if depth > 20 {
-		return 0, false
-	}
-	e = s.expand(e, env)
-	if c, ok := e.(*ast.CallExpr); ok {
-		name := functionName(c.Fun)
-		if (name == "rank" || name == "declaredRank") && len(c.Args) > 0 {
-			return literalNumber(s.expand(c.Args[0], env))
-		}
-		if name == "declaredRankFrom" && len(c.Args) > 1 {
-			return literalNumber(s.expand(c.Args[1], env))
-		}
-		body, next := s.body(c, env)
-		if body != nil {
-			var score float64
-			found := false
-			ast.Inspect(body, func(n ast.Node) bool {
-				if r, ok := n.(*ast.ReturnStmt); ok {
-					for _, e := range r.Results {
-						if v, ok := s.score(e, next, depth+1); ok {
-							score = v
-							found = true
-						}
-					}
-					return false
-				}
-				return true
-			})
-			return score, found
-		}
-	}
-	if c, ok := e.(*ast.CompositeLit); ok {
-		for _, field := range c.Elts {
-			if kv, ok := field.(*ast.KeyValueExpr); ok && functionName(kv.Key) == "Score" {
-				return literalNumber(s.expand(kv.Value, env))
-			}
-		}
-	}
-	return 0, false
-}
-func (s sourceExporter) claims(e ast.Expr, env map[string]ast.Expr, depth int) []vendorplugin.RankEvidence {
-	if depth > 20 {
-		return nil
-	}
-	e = s.expand(e, env)
-	if call, ok := e.(*ast.CallExpr); ok {
-		name := functionName(call.Fun)
-		text := func(i int) string {
-			if i >= len(call.Args) {
-				panic("unsupported bench arity")
-			}
-			v, ok := s.text(call.Args[i], env)
-			if !ok {
-				panic("unsupported bench string")
-			}
-			return v
-		}
-		num := func(i int) int {
-			v, ok := literalNumber(s.expand(call.Args[i], env))
-			if !ok {
-				panic("unsupported bench number")
-			}
-			return int(v)
-		}
-		switch name {
-		case "BughuntMeasured":
-			return []vendorplugin.RankEvidence{vendorplugin.BughuntMeasured(text(0), num(1))}
-		case "BughuntMeasuredAs":
-			return []vendorplugin.RankEvidence{vendorplugin.BughuntMeasuredAs(text(0), text(1), num(2))}
-		case "BughuntInterpolated":
-			return []vendorplugin.RankEvidence{vendorplugin.BughuntInterpolated(text(0), text(1), text(2))}
-		case "BughuntCost":
-			return []vendorplugin.RankEvidence{vendorplugin.BughuntCost(text(0))}
-		}
-		// A rank/declaredRank passes all of its explicit bench claim arguments.
-		if name == "rank" || name == "declaredRank" || name == "declaredRankFrom" || name == "withCost" {
-			out := []vendorplugin.RankEvidence{}
-			for _, arg := range call.Args {
-				out = append(out, s.claims(arg, env, depth+1)...)
-			}
-			return out
-		}
-		body, next := s.body(call, env)
-		if body != nil {
-			out := []vendorplugin.RankEvidence{}
-			ast.Inspect(body, func(n ast.Node) bool {
-				if ret, ok := n.(*ast.ReturnStmt); ok {
-					for _, x := range ret.Results {
-						out = append(out, s.claims(x, next, depth+1)...)
-					}
-					return false
-				}
-				return true
-			})
-			return out
-		}
-	}
-	if c, ok := e.(*ast.CompositeLit); ok {
-		out := []vendorplugin.RankEvidence{}
-		for _, x := range c.Elts {
-			if kv, ok := x.(*ast.KeyValueExpr); ok {
-				x = kv.Value
-			}
-			out = append(out, s.claims(x, env, depth+1)...)
-		}
-		return out
-	}
-	return nil
-}
-func (s sourceExporter) efforts(e ast.Expr, env map[string]ast.Expr, depth int) []string {
-	if depth > 20 {
-		return nil
-	}
-	e = s.expand(e, env)
-	if c, ok := e.(*ast.CallExpr); ok {
-		name := functionName(c.Fun)
-		if name == "effortNone" {
-			return []string{"none"}
-		}
-		if name == "effortRequired" && len(c.Args) == 2 {
-			return s.efforts(c.Args[1], env, depth+1)
-		}
-		body, next := s.body(c, env)
-		// muse's local closure is a data literal, not an executable plugin.
-		if body == nil {
-			if id, ok := c.Fun.(*ast.Ident); ok {
-				if x, ok := env[id.Name].(*ast.FuncLit); ok {
-					body = x.Body
-				}
-			}
-		}
-		if body != nil {
-			var out []string
-			ast.Inspect(body, func(n ast.Node) bool {
-				if ret, ok := n.(*ast.ReturnStmt); ok {
-					for _, x := range ret.Results {
-						if v := s.efforts(x, next, depth+1); v != nil {
-							out = v
-						}
-					}
-					return false
-				}
-				return true
-			})
-			return out
-		}
-	}
-	if c, ok := e.(*ast.CompositeLit); ok {
-		if _, ok := c.Type.(*ast.ArrayType); ok {
-			out := []string{}
-			for _, x := range c.Elts {
-				v, ok := s.text(x, env)
-				if !ok {
-					return nil
-				}
-				out = append(out, v)
-			}
-			return out
-		}
-		none := false
-		for _, x := range c.Elts {
-			if kv, ok := x.(*ast.KeyValueExpr); ok {
-				key := functionName(kv.Key)
-				if key == "Vocabulary" {
-					return s.efforts(kv.Value, env, depth+1)
-				}
-				if key == "Support" && functionName(kv.Value) == "EffortSupportNone" {
-					none = true
-				}
-			}
-		}
-		if none {
-			return []string{"none"}
-		}
-	}
-	return nil
-}
-func moduleSource(t *testing.T) string {
+func pinnedBugHunt(t *testing.T) BugHuntExport {
 	t.Helper()
-	// Refuse a go.mod upgrade that leaves the importer/export pinned to an older
-	// cached source tree; otherwise a newly added module row could be missed.
+	v, err := PinnedExport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// This fixture and canonical import were captured from the unchanged v0.5.32
+// importer before replacing it. They are never rewritten during vector regeneration.
+// Reset ONLY raw_artifact_ref to the old pin, then recompute record addresses:
+// canonical equality proves the accessor path preserves the same source facts.
+func sameSourceBugHunt(t *testing.T) (BugHuntExport, Import) {
+	t.Helper()
+	var old BugHuntExport
+	fixture(t, "bughunt-v0.5.32-export.json", &old)
+	if old.ModuleVersion != "v0.5.32" || len(old.Rows) != 58 {
+		t.Fatal("invalid legacy baseline")
+	}
+	current := pinnedBugHunt(t)
+	if !reflect.DeepEqual(current.Models, old.Models) || !reflect.DeepEqual(current.Mapping, old.Mapping) || current.MappingVersion != old.MappingVersion {
+		t.Fatal("same-source registry or mapping facts changed")
+	}
+	if len(current.Rows) != len(old.Rows) {
+		t.Fatal("same-source claim count changed")
+	}
+	for i, row := range current.Rows {
+		row.Denominator, row.SourceVersion = nil, ""
+		if !reflect.DeepEqual(row, old.Rows[i]) {
+			t.Fatalf("same-source fact changed: %s", row.Key)
+		}
+	}
+	doc, _, err := ImportBugHunt(current, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := doc
+	legacy.Observations = append([]Observation(nil), doc.Observations...)
+	for i := range legacy.Observations {
+		o := &legacy.Observations[i]
+		prefix := "module:" + ModuleVersion + "/bench/"
+		if !strings.HasPrefix(o.Provenance.RawArtifactRef, prefix) {
+			t.Fatal("unexpected artifact identity")
+		}
+		o.Provenance.RawArtifactRef = "module:" + old.ModuleVersion + "/bench/" + strings.TrimPrefix(o.Provenance.RawArtifactRef, prefix)
+		o.ID = ""
+	}
+	legacy, _, err = Prepare(legacy, old.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := canonical.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden, err := os.ReadFile("testdata/bughunt-v0.5.32-import.canonical.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(raw, golden) {
+		t.Fatal("same-source canonical observations/import drifted from v0.5.32")
+	}
+	digest, err := legacy.Digest()
+	if err != nil || digest != "sha256:5dfa8f4005a38dccacd56f6a401e37279ffae185f140909e3843e60c52f045bd" {
+		t.Fatalf("legacy baseline drift: %s %v", digest, err)
+	}
+	return old, doc
+}
+
+func TestBugHuntSameSourceParity(t *testing.T) { sameSourceBugHunt(t) }
+
+func TestAcceptance2BugHuntParity(t *testing.T) {
+	v := pinnedBugHunt(t)
+	doc, _, err := ImportBugHunt(v, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := benchdata.BugHuntRows()
+	if len(rows) != 58 || len(v.Rows) != len(rows) || len(doc.Observations) != len(rows) {
+		t.Fatalf("claim counts: accessor=%d export=%d import=%d", len(rows), len(v.Rows), len(doc.Observations))
+	}
+	actual := map[string]Observation{}
+	prefix := "module:" + ModuleVersion + "/bench/"
+	for _, o := range doc.Observations {
+		if !strings.HasPrefix(o.Provenance.RawArtifactRef, prefix) {
+			t.Fatalf("unexpected artifact: %s", o.Provenance.RawArtifactRef)
+		}
+		key := strings.TrimPrefix(o.Provenance.RawArtifactRef, prefix)
+		if _, duplicate := actual[key]; duplicate {
+			t.Fatalf("duplicate source key: %s", key)
+		}
+		actual[key] = o
+	}
+	expected := map[string]bool{}
+	counts := map[string]int{}
+	for _, row := range rows {
+		if expected[row.Key] {
+			t.Fatalf("duplicate accessor key: %s", row.Key)
+		}
+		expected[row.Key] = true
+		counts[row.Kind]++
+		t.Run(row.Key, func(t *testing.T) {
+			o, found := actual[row.Key]
+			if !found {
+				t.Fatal("accessor row dropped")
+			}
+			kind, metric := row.Kind, "fixed"
+			if kind == "cost" {
+				kind, metric = "measured", "list_cost"
+			}
+			if o.Subject != (Fingerprint{ModelID: row.ModelID, Effort: row.Effort}) || o.SubjectResolution != "resolved" || o.EvidenceKind != kind || o.Metric != metric || o.Value != row.Value {
+				t.Fatalf("row drift: %+v", o)
+			}
+			if o.BenchmarkRef.Address() != row.SourceVersion || o.Provenance.OriginRef != row.OriginRef || o.Provenance.Source != "bug-hunt" || o.Provenance.RetrievedAt != v.RetrievedAt || o.ObservedAt != canonical.Unknown {
+				t.Fatalf("source/origin/time drift: %+v", o)
+			}
+			var cost *Cost
+			if row.Cost != nil {
+				cost = &Cost{TokensIn: row.Cost.TokensIn, TokensOut: row.Cost.TokensOut, USD: row.Cost.USD, WallS: row.Cost.WallS}
+			}
+			if !reflect.DeepEqual(o.Cost, cost) {
+				t.Fatalf("cost drift: %+v != %+v", o.Cost, cost)
+			}
+			if row.Kind == "cost" {
+				if row.Denominator != nil || o.SampleCount != nil {
+					t.Fatal("cost acquired a denominator/sample count")
+				}
+			} else {
+				if row.Denominator == nil || *row.Denominator != 105 {
+					t.Fatal("invalid accessor fixed denominator")
+				}
+				if row.Kind == "measured" {
+					if o.SampleCount == nil || *o.SampleCount != *row.Denominator {
+						t.Fatal("measured sample count lost")
+					}
+				} else if o.SampleCount != nil || o.Subject.Effort != "" {
+					t.Fatal("interpolation acquired sample count or effort")
+				}
+			}
+		})
+	}
+	if counts["measured"] != 12 || counts["interpolated"] != 45 || counts["cost"] != 1 || len(counts) != 3 {
+		t.Fatalf("claim kinds: %v", counts)
+	}
+	for key := range actual {
+		if !expected[key] {
+			t.Fatalf("extra observation key: %s", key)
+		}
+	}
+	if len(actual) != len(expected) {
+		t.Fatal("source key sets differ")
+	}
+	metrics := map[string]int{}
+	for _, o := range doc.Observations {
+		metrics[o.Metric+"/"+o.EvidenceKind]++
+	}
+	if !reflect.DeepEqual(metrics, map[string]int{"fixed/measured": 12, "fixed/interpolated": 45, "list_cost/measured": 1}) {
+		t.Fatalf("metric/kind semantics: %v", metrics)
+	}
+	for _, metric := range doc.Benchmarks[0].Metrics {
+		if metric.Name == "fixed" && !reflect.DeepEqual(metric.Scale, &Scale{Min: 0, Max: 105}) {
+			t.Fatal("fixed scale drift")
+		}
+		if metric.Name == "list_cost" && metric.Scale != nil {
+			t.Fatal("cost acquired a quality scale")
+		}
+	}
+	facts := benchdata.RegistryFacts()
+	if len(v.Models) != len(facts) || len(v.Mapping) != len(facts) {
+		t.Fatal("registry projection incomplete")
+	}
+	for i, fact := range facts {
+		t.Run("registry/"+fact.ModelID, func(t *testing.T) {
+			if !reflect.DeepEqual(v.Models[i], RegistryModel{ModelID: fact.ModelID, Efforts: fact.Efforts}) || v.Mapping[i] != (ModelMapping{ExternalName: fact.ModelID, ModelID: fact.ModelID}) {
+				t.Fatal("registry or explicit identity mapping drift")
+			}
+		})
+	}
+}
+
+type bugHuntVectorRow struct {
+	Key       string `json:"key"`
+	Address   string `json:"address"`
+	OriginRef string `json:"origin_ref"`
+}
+type bugHuntVectors struct {
+	SchemaVersion  string             `json:"schema_version"`
+	ModuleVersion  string             `json:"module_version"`
+	ExportDigest   string             `json:"export_digest"`
+	ImportDigest   string             `json:"import_digest"`
+	RegistryDigest string             `json:"registry_digest"`
+	SnapshotDigest string             `json:"snapshot_digest"`
+	Rows           []bugHuntVectorRow `json:"rows"`
+}
+
+func TestBugHuntPinnedVectors(t *testing.T) {
+	// Even regeneration must first prove equality with the frozen old source.
+	_, doc := sameSourceBugHunt(t)
+	v := pinnedBugHunt(t)
+	mustDigest := func(value any) string {
+		t.Helper()
+		digest, err := canonical.Digest(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return digest
+	}
+	s, err := NewStore(t.TempDir(), v.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Add(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vectors := bugHuntVectors{SchemaVersion: SchemaVersion, ModuleVersion: ModuleVersion, ExportDigest: mustDigest(v), ImportDigest: result.ImportDigest, RegistryDigest: mustDigest(v.Registry()), SnapshotDigest: result.SnapshotDigest, Rows: []bugHuntVectorRow{}}
+	for _, o := range doc.Observations {
+		key := strings.TrimPrefix(o.Provenance.RawArtifactRef, "module:"+ModuleVersion+"/bench/")
+		vectors.Rows = append(vectors.Rows, bugHuntVectorRow{Key: key, Address: o.ID, OriginRef: o.Provenance.OriginRef})
+	}
+	canonical.SortByKey(vectors.Rows, func(row bugHuntVectorRow) string { return row.Key })
+	for _, tc := range []struct {
+		path  string
+		value any
+	}{
+		{"data/bughunt-export.json", v},
+		{"testdata/bughunt-v0.5.40-import.canonical.json", doc},
+		{"testdata/bughunt-v0.5.40-vectors.json", vectors},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			raw, err := canonical.Marshal(tc.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if os.Getenv("CMR_UPDATE_EVIDENCE") == "1" {
+				if err := os.WriteFile(tc.path, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			golden, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(raw, golden) {
+				t.Fatalf("pinned vector changed: %s; review facts and new-source identities", tc.path)
+			}
+		})
+	}
+	t.Logf("v%s vectors: export=%s import=%s registry=%s snapshot=%s", strings.TrimPrefix(ModuleVersion, "v"), vectors.ExportDigest, vectors.ImportDigest, vectors.RegistryDigest, vectors.SnapshotDigest)
 	manifest, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	fields := strings.Fields(string(manifest))
-	actual := ""
+	pin := ""
 	for i, field := range fields {
 		if field == "github.com/relux-works/skill-agents-management" && i+1 < len(fields) {
-			actual = fields[i+1]
-			break
+			pin = fields[i+1]
 		}
 	}
-	if actual != ModuleVersion {
-		t.Fatalf("compiled dependency must match importer pin: go.mod=%s importer=%s", actual, ModuleVersion)
+	if pin != ModuleVersion {
+		t.Fatalf("dependency/importer pin mismatch: %s != %s", pin, ModuleVersion)
 	}
-	cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/relux-works/skill-agents-management")
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("offline pinned module lookup failed: %v: %s", err, raw)
-	}
-	dir := strings.TrimSpace(string(raw))
-	if dir == "" {
-		t.Fatal("offline pinned module lookup returned no directory")
-	}
-	path := filepath.Join(dir, "pkg", "vendorplugin")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("pinned module source absent: %v", err)
-	}
-	return path
 }
-func exportPinnedSource(t *testing.T) BugHuntExport {
-	t.Helper()
-	out := BugHuntExport{SchemaVersion: SchemaVersion, ModuleVersion: ModuleVersion, MappingVersion: "bughunt-model-map-v1", ImportedAt: "2026-10-01T00:00:00Z", RetrievedAt: "2026-10-01T00:00:00Z", Models: []RegistryModel{}, Mapping: []ModelMapping{}, Rows: []BugHuntRow{}}
-	root := moduleSource(t)
-	paths, err := sourcePaths(root)
-	if err != nil {
-		t.Fatal(err)
+
+func TestBugHuntTypedRefusals(t *testing.T) {
+	ptr := func(v int64) *int64 { return &v }
+	cases := []struct {
+		name, code string
+		change     func(*BugHuntExport)
+	}{
+		{"module", "evidence_bughunt_version", func(v *BugHuntExport) { v.ModuleVersion = "v0.5.32" }},
+		{"mapping", "evidence_bughunt_version", func(v *BugHuntExport) { v.MappingVersion = "undeclared" }},
+		{"schema", "evidence_bughunt_version", func(v *BugHuntExport) { v.SchemaVersion = "other" }},
+		{"source", "evidence_bughunt_version", func(v *BugHuntExport) { v.Rows[0].SourceVersion = "other@1" }},
+		{"retrieved-at", "evidence_invalid_time", func(v *BugHuntExport) { v.RetrievedAt = "unknown" }},
+		{"imported-at", "evidence_invalid_time", func(v *BugHuntExport) { v.ImportedAt = "unknown" }},
+		{"row-model", "evidence_bughunt_row", func(v *BugHuntExport) { v.Rows[0].ModelName = "" }},
+		{"row-origin", "evidence_bughunt_row", func(v *BugHuntExport) { v.Rows[0].OriginRef = "" }},
+		{"row-key", "evidence_bughunt_row", func(v *BugHuntExport) { v.Rows[0].Key = "" }},
+		{"row-kind", "evidence_bughunt_row", func(v *BugHuntExport) { v.Rows[0].Kind = "invented" }},
 	}
-	costPattern := regexp.MustCompile(`at ([a-z]+) this row fixed [0-9]+/105 for \$([0-9.]+) list cost`)
-	for _, path := range paths {
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		modelRows := modelLiterals(file)
-		s := sourceExporter{map[string]*ast.FuncDecl{}, map[string]ast.Expr{}}
-		for _, d := range file.Decls {
-			if fn, ok := d.(*ast.FuncDecl); ok {
-				s.funcs[fn.Name.Name] = fn
-			}
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			if v, ok := n.(*ast.ValueSpec); ok {
-				for i, name := range v.Names {
-					if i < len(v.Values) {
-						s.values[name.Name] = v.Values[i]
+	for _, kind := range []string{"measured", "interpolated"} {
+		for _, denominator := range []struct {
+			name  string
+			value *int64
+		}{{"missing", nil}, {"negative", ptr(-1)}, {"zero", ptr(0)}, {"inconsistent", ptr(106)}} {
+			cases = append(cases, struct {
+				name, code string
+				change     func(*BugHuntExport)
+			}{kind + "/" + denominator.name, "evidence_bughunt_denominator", func(v *BugHuntExport) {
+				for i := range v.Rows {
+					if v.Rows[i].Kind == kind {
+						v.Rows[i].Denominator = denominator.value
+						return
 					}
 				}
-			}
-			if a, ok := n.(*ast.AssignStmt); ok {
-				for i, name := range a.Lhs {
-					if id, ok := name.(*ast.Ident); ok && i < len(a.Rhs) {
-						s.values[id.Name] = a.Rhs[i]
-					}
+			}})
+		}
+	}
+	for _, cost := range []struct {
+		name, code string
+		change     func(*BugHuntRow)
+	}{
+		{"denominator-zero", "evidence_bughunt_denominator", func(r *BugHuntRow) { r.Denominator = ptr(0) }},
+		{"denominator-fixed", "evidence_bughunt_denominator", func(r *BugHuntRow) { r.Denominator = ptr(105) }},
+		{"missing-cost", "evidence_bughunt_cost", func(r *BugHuntRow) { r.Cost = nil }},
+		{"missing-usd", "evidence_bughunt_cost", func(r *BugHuntRow) { r.Cost.USD = nil }},
+		{"disagrees", "evidence_bughunt_cost", func(r *BugHuntRow) { r.Value++ }},
+	} {
+		cases = append(cases, struct {
+			name, code string
+			change     func(*BugHuntExport)
+		}{"cost/" + cost.name, cost.code, func(v *BugHuntExport) {
+			for i := range v.Rows {
+				if v.Rows[i].Kind == "cost" {
+					cost.change(&v.Rows[i])
+					return
 				}
 			}
-			return true
+		}})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := pinnedBugHunt(t)
+			tc.change(&v)
+			_, _, err := ImportBugHunt(v, "")
+			var typed *Error
+			if !errors.As(err, &typed) || typed.Code != tc.code {
+				t.Fatalf("wanted typed %s, got %v", tc.code, err)
+			}
 		})
-		ast.Inspect(file, func(n ast.Node) bool {
-			lit, ok := n.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			fields := map[string]ast.Expr{}
-			for _, x := range lit.Elts {
-				if kv, ok := x.(*ast.KeyValueExpr); ok {
-					fields[functionName(kv.Key)] = kv.Value
+	}
+}
+
+func TestBugHuntZeroAndUnknownCost(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		zero bool
+	}{{"zero-cost", true}, {"absent-quality-cost", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := pinnedBugHunt(t)
+			index := 0
+			if tc.zero {
+				for i := range v.Rows {
+					if v.Rows[i].Kind == "cost" {
+						index = i
+						zero := 0.0
+						v.Rows[i].Value = zero
+						v.Rows[i].Cost.USD = &zero
+						break
+					}
 				}
+			} else {
+				v.Rows[index].Cost = nil
 			}
-			if !modelRows[lit] && !looksLikeModel(lit, fields) {
-				return true
-			}
-			id, skip, err := modelRow(s, lit, fields, path, root)
+			doc, _, err := ImportBugHunt(v, "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if skip {
-				return true
-			}
-			claims := s.claims(fields["Rank"], s.values, 0)
-			score, ok := s.score(fields["Rank"], s.values, 0)
-			if !ok {
-				t.Fatalf("cannot statically export bench score for %s", id)
-			}
-			efforts := s.efforts(fields["Effort"], s.values, 0)
-			if efforts == nil {
-				t.Fatalf("cannot statically export vocabulary for %s", id)
-			}
-			canonical.SortByKey(efforts, func(s string) string { return s })
-			out.Models = append(out.Models, RegistryModel{id, efforts})
-			out.Mapping = append(out.Mapping, ModelMapping{id, id})
-			for index, claim := range claims {
-				parsed, err := vendorplugin.ParseBughuntEvidence(claim)
-				if err != nil {
-					t.Fatal(err)
-				}
-				row := BugHuntRow{Key: id + ":" + strconv.Itoa(index), ModelName: id, Kind: string(parsed.Kind), Value: score, OriginRef: "bug-hunt:" + id}
-				switch parsed.Kind {
-				case vendorplugin.BughuntMeasuredClaim:
-					row.Value = float64(parsed.Fixed)
-					row.Effort = parsed.Effort
-					benchID := parsed.BenchID
-					if benchID == "" {
-						benchID = id
-					}
-					row.OriginRef = "bug-hunt:" + benchID + ":" + parsed.Effort
-				case vendorplugin.BughuntInterpolatedClaim: // Effort not stated: remains unknown.
-				case vendorplugin.BughuntCostClaim:
-					m := costPattern.FindStringSubmatch(claim.Observation)
-					if m == nil {
-						t.Fatalf("new cost grammar requires exporter update: %s", id)
-					}
-					usd, err := strconv.ParseFloat(m[2], 64)
-					if err != nil {
-						t.Fatal(err)
-					}
-					row.Effort = m[1]
-					row.Value = usd
-					row.Cost = &Cost{USD: &usd}
-					row.OriginRef = "bug-hunt:" + id + ":" + row.Effort + ":cost"
-				default:
-					t.Fatalf("unhandled claim kind %q", parsed.Kind)
-				}
-				out.Rows = append(out.Rows, row)
-			}
-			return false
-		})
-	}
-	canonical.SortByKey(out.Models, func(m RegistryModel) string { return m.ModelID })
-	canonical.SortByKey(out.Mapping, func(m ModelMapping) string { return m.ExternalName })
-	canonical.SortByKey(out.Rows, func(r BugHuntRow) string { return r.Key })
-	if len(out.Rows) == 0 {
-		t.Fatal("empty module export")
-	}
-	return out
-}
-func TestAcceptance2BugHuntParity(t *testing.T) {
-	export := exportPinnedSource(t)
-	checkConstructorParity(t, moduleSource(t), export)
-	raw, err := canonical.Marshal(export)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join("data", "bughunt-export.json")
-	if *updateEvidence {
-		if err = os.WriteFile(path, raw, 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	golden, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(raw) != string(golden) {
-		t.Fatal("pinned module rows changed or export dropped a row; review and regenerate export")
-	}
-	doc, _, err := ImportBugHunt(export, "2026-10-01T00:00:00Z")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(doc.Observations) != len(export.Rows) {
-		t.Fatalf("got %d observations for %d rows", len(doc.Observations), len(export.Rows))
-	}
-	for _, row := range export.Rows {
-		t.Run(row.Key, func(t *testing.T) {
-			found := false
+			ref := "module:" + ModuleVersion + "/bench/" + v.Rows[index].Key
 			for _, o := range doc.Observations {
-				if o.Provenance.RawArtifactRef != "module:"+ModuleVersion+"/bench/"+row.Key {
-					continue
-				}
-				found = true
-				kind := row.Kind
-				metric := "fixed"
-				if kind == "cost" {
-					kind = "measured"
-					metric = "list_cost"
-				}
-				if o.Subject.ModelID != row.ModelName || o.Subject.Effort != row.Effort || o.EvidenceKind != kind || o.Metric != metric || o.Value != row.Value {
-					t.Fatalf("row drift: %+v", o)
-				}
-				a, _ := json.Marshal(o.Cost)
-				b, _ := json.Marshal(row.Cost)
-				if string(a) != string(b) {
-					t.Fatalf("cost drift: %s != %s", a, b)
-				}
-			}
-			if !found {
-				t.Fatal("module row dropped")
-			}
-		})
-	}
-}
-
-func sourcePaths(root string) ([]string, error) {
-	paths := []string{}
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	return paths, err
-}
-
-func looksLikeModel(lit *ast.CompositeLit, fields map[string]ast.Expr) bool {
-	if len(lit.Elts) == 0 {
-		return false
-	}
-	if sel, ok := lit.Type.(*ast.SelectorExpr); ok && functionName(sel.X) == "agentic" && sel.Sel.Name == "Model" {
-		return false
-	}
-	return functionName(lit.Type) == "Model" || fields["Rank"] != nil || fields["ID"] != nil && fields["Effort"] != nil || fields["ID"] != nil && (fields["Systems"] != nil || fields["ContextWindowTokens"] != nil)
-}
-
-func modelRow(s sourceExporter, lit *ast.CompositeLit, fields map[string]ast.Expr, path, root string) (string, bool, error) {
-	for _, key := range []string{"ID", "Rank", "Effort"} {
-		if fields[key] == nil {
-			return "", false, fmt.Errorf("model row lacks %s in %s at offset %d", key, path, lit.Pos())
-		}
-	}
-	claims := s.claims(fields["Rank"], s.values, 0)
-	id, literal := literalString(fields["ID"])
-	if len(claims) == 0 {
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return "", false, err
-		}
-		// Explicit zero-claim allow-list: the pin's sole local-models template is
-		// operator-populated, has dynamic modelID and localCapabilityRank(), and
-		// declares no benchmark. No other local row or changed template is exempt.
-		allowed := map[string]string{"vendors/local-models/models.go:modelID": "localCapabilityRank"}
-		key := filepath.ToSlash(relative) + ":" + functionName(fields["ID"])
-		rank, call := fields["Rank"].(*ast.CallExpr)
-		if !literal && allowed[key] != "" && call && functionName(rank.Fun) == allowed[key] && len(rank.Args) == 0 {
-			return "", true, nil
-		}
-		return "", false, fmt.Errorf("bench row cannot be exported (zero claims): %s at offset %d", path, lit.Pos())
-	}
-	if !literal {
-		return "", false, fmt.Errorf("model row ID cannot be exported in %s at offset %d", path, lit.Pos())
-	}
-	return id, false, nil
-}
-
-// constructorCounts is independent of the model-row interpreter: it visits
-// every call in every non-test Go file, including unsupported declaration shapes.
-func constructorCounts(root string) (map[string]int, error) {
-	paths, err := sourcePaths(root)
-	if err != nil {
-		return nil, err
-	}
-	counts := map[string]int{"measured": 0, "interpolated": 0, "cost": 0}
-	for _, path := range paths {
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			return nil, err
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok {
-				switch functionName(call.Fun) {
-				case "BughuntMeasured", "BughuntMeasuredAs":
-					counts["measured"]++
-				case "BughuntInterpolated":
-					counts["interpolated"]++
-				case "BughuntCost":
-					counts["cost"]++
-				}
-			}
-			return true
-		})
-	}
-	return counts, nil
-}
-
-func modelLiterals(file *ast.File) map[*ast.CompositeLit]bool {
-	rows := map[*ast.CompositeLit]bool{}
-	ast.Inspect(file, func(n ast.Node) bool {
-		if lit, ok := n.(*ast.CompositeLit); ok {
-			if a, ok := lit.Type.(*ast.ArrayType); ok && functionName(a.Elt) == "Model" {
-				for _, e := range lit.Elts {
-					if row, ok := e.(*ast.CompositeLit); ok {
-						rows[row] = true
+				if o.Provenance.RawArtifactRef == ref {
+					if tc.zero {
+						if o.Metric != "list_cost" || o.Value != 0 || o.Cost == nil || o.Cost.USD == nil || *o.Cost.USD != 0 {
+							t.Fatal("explicit zero cost lost")
+						}
+					} else if o.Cost != nil {
+						t.Fatal("unknown cost fabricated")
 					}
+					return
 				}
 			}
-		}
-		return true
-	})
-	return rows
+			t.Fatal("row dropped")
+		})
+	}
 }
 
-func TestParityModelRowsFailClosed(t *testing.T) {
+func TestBugHuntPinnedCopiesAndConcurrency(t *testing.T) {
+	expected := pinnedBugHunt(t)
 	for _, tc := range []struct {
-		name, row, path string
-		skip            bool
-		fail            bool
+		name   string
+		mutate func(*BugHuntExport)
 	}{
-		{"missing-ID", `Model{Rank: rank(), Effort: axis()}`, "models.go", false, true},
-		{"missing-Rank", `Model{ID: "new", Effort: axis()}`, "models.go", false, true},
-		{"missing-Effort", `Model{ID: "new", Rank: rank()}`, "models.go", false, true},
-		{"aliased-package-missing-Rank", `registry.Model{ID: "new", Effort: axis()}`, "models.go", false, true},
-		{"implicit-missing-fields", `[]Model{{ID: "new"}}`, "models.go", false, true},
-		{"dynamic-ID", `Model{ID: modelID, Rank: rank(BughuntMeasured("max", 1)), Effort: axis()}`, "models.go", false, true},
-		{"new-local-zero", `Model{ID: "new-local", Rank: localCapabilityRank(), Effort: axis()}`, "vendors/local-models/models.go", false, true},
-		{"new-local-template", `Model{ID: newID, Rank: localCapabilityRank(), Effort: axis()}`, "vendors/local-models/models.go", false, true},
-		{"allow-listed-template", `Model{ID: modelID, Rank: localCapabilityRank(), Effort: axis()}`, "vendors/local-models/models.go", true, false},
+		{"denominator", func(v *BugHuntExport) { *v.Rows[0].Denominator = 1 }},
+		{"cost", func(v *BugHuntExport) {
+			for i := range v.Rows {
+				if v.Rows[i].Cost != nil {
+					*v.Rows[i].Cost.USD = 0
+				}
+			}
+		}},
+		{"model-efforts", func(v *BugHuntExport) { v.Models[0].Efforts[0] = "corrupt" }},
+		{"mapping", func(v *BugHuntExport) { v.Mapping[0].ModelID = "corrupt" }},
+		{"row", func(v *BugHuntExport) { v.Rows[0].OriginRef = "corrupt" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", "package fixture; var row = "+tc.row, 0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			marked := modelLiterals(file)
-			found := false
-			ast.Inspect(file, func(n ast.Node) bool {
-				lit, ok := n.(*ast.CompositeLit)
-				if !ok {
-					return true
-				}
-				fields := map[string]ast.Expr{}
-				for _, e := range lit.Elts {
-					if kv, ok := e.(*ast.KeyValueExpr); ok {
-						fields[functionName(kv.Key)] = kv.Value
-					}
-				}
-				if !marked[lit] && !looksLikeModel(lit, fields) {
-					return true
-				}
-				found = true
-				_, skip, err := modelRow(sourceExporter{map[string]*ast.FuncDecl{}, map[string]ast.Expr{}}, lit, fields, tc.path, ".")
-				if (err != nil) != tc.fail || skip != tc.skip {
-					t.Fatalf("row skip=%v error=%v", skip, err)
-				}
-				return false
-			})
-			if !found {
-				t.Fatal("model-shaped literal silently skipped")
+			v := pinnedBugHunt(t)
+			tc.mutate(&v)
+			if !reflect.DeepEqual(pinnedBugHunt(t), expected) {
+				t.Fatal("export shares mutable data")
 			}
 		})
 	}
-}
-func TestParityConstructorWalkAllFiles(t *testing.T) {
-	root := t.TempDir()
-	for _, tc := range []struct{ path, code string }{
-		{"extra.go", `package fixture; var a = BughuntMeasured("max", 1)`},
-		{"nested/unusual.go", `package fixture; var a = vp.BughuntMeasuredAs("alias", "max", 1); var b = vp.BughuntInterpolated("a", "b", "why"); var c = BughuntCost("cost")`},
-		{"excluded_test.go", `package fixture; var ignored = BughuntMeasured("max", 1)`},
-	} {
-		path := filepath.Join(root, tc.path)
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(tc.code), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	counts, err := constructorCounts(root)
+	r, err := PinnedRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["measured"] != 2 || counts["interpolated"] != 1 || counts["cost"] != 1 {
-		t.Fatalf("constructor calls dropped: %v", counts)
+	r.Models[0].Efforts[0] = "corrupt"
+	fresh, err := PinnedRegistry()
+	if err != nil || !reflect.DeepEqual(fresh, expected.Registry()) {
+		t.Fatal("registry shares mutable data")
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 8; j++ {
+				v, err := PinnedExport()
+				if err != nil || !reflect.DeepEqual(v, expected) {
+					t.Errorf("concurrent export drift: %v", err)
+					return
+				}
+				*v.Rows[0].Denominator = 1
+				v.Models[0].Efforts[0] = "corrupt"
+				for i := range v.Rows {
+					if v.Rows[i].Cost != nil {
+						*v.Rows[i].Cost.USD = 0
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestBugHuntUpgradeRebindReplay(t *testing.T) {
+	old, doc := sameSourceBugHunt(t)
+	var legacy Import
+	fixture(t, "bughunt-v0.5.32-import.canonical.json", &legacy)
+	root := t.TempDir()
+	before, err := NewStore(root, old.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := before.Add(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSnap, _, err := before.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := NewStore(root, pinnedBugHunt(t).Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = next.Add(doc)
+	codeIs(t, err, "evidence_registry_mismatch")
+	rebound, err := next.Rebind()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(rebound, oldSnap) || !reflect.DeepEqual(rebound.Imports, oldSnap.Imports) {
+		t.Fatal("rebind must change registry binding only")
+	}
+	newResult, err := next.Add(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newResult.ImportDigest == initial.ImportDigest || newResult.SnapshotDigest == initial.SnapshotDigest {
+		t.Fatal("new source pin must change addresses")
+	}
+	for _, tc := range []struct {
+		name     string
+		snap     Snapshot
+		registry Registry
+	}{{"old", oldSnap, old.Registry()}, {"rebound", rebound, pinnedBugHunt(t).Registry()}} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := next.RegistryFor(tc.snap)
+			if err != nil || !reflect.DeepEqual(r, tc.registry) {
+				t.Fatalf("old registry not replayable: %v", err)
+			}
+			docs, _, err := next.InspectSnapshot(tc.snap)
+			if err != nil || len(docs) != 1 || !reflect.DeepEqual(docs[0], legacy) {
+				t.Fatalf("legacy import changed: %v", err)
+			}
+		})
+	}
+	// Derivation must deduplicate an original publication after both pins are
+	// present, rather than treating their changed addresses as corroboration.
+	latest, _, docs, _, err := next.Inspect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := Derive(latest, docs, pinnedBugHunt(t).Registry(), oneCategory(t, "code.fix"), DefaultDerivation(), []Fingerprint{{ModelID: "gpt-6-astra", Effort: "max"}}, bugHuntReleaseAt)
+	if err != nil || len(view.Results) != 1 || len(view.Results[0].Contributions) != 1 {
+		t.Fatalf("same publication counted again across pins: %+v %v", view.Results, err)
+	}
+	// Aliases/reimports share publication identities across pins: they cannot
+	// become independent corroboration merely because their record IDs changed.
+	origins := map[string]string{}
+	addresses := map[string]string{}
+	for _, o := range legacy.Observations {
+		key := strings.TrimPrefix(o.Provenance.RawArtifactRef, "module:v0.5.32/bench/")
+		origins[key] = o.Provenance.OriginRef
+		addresses[key] = o.ID
+	}
+	for _, o := range doc.Observations {
+		key := strings.TrimPrefix(o.Provenance.RawArtifactRef, "module:"+ModuleVersion+"/bench/")
+		if addresses[key] == o.ID {
+			t.Fatalf("new source pin retained an old address: %s", key)
+		}
+		if origins[key] != o.Provenance.OriginRef {
+			t.Fatalf("origin changed across pins: %s", key)
+		}
+	}
+	for _, alias := range []struct{ a, b string }{{"astra:0", "gpt-6-astra:0"}, {"gemini-flash:0", "gemini-3.8-flash-high:0"}, {"muse-spark:0", "muse-spark-1.3-contributor:0"}} {
+		if origins[alias.a] != origins[alias.b] {
+			t.Fatalf("alias publication split: %s", alias.a)
+		}
 	}
 }
 
-// The pinned source has 53 constructor calls, expanded to 58 exported claims.
-// Five aliases reuse constructors; astra has its own call and is not an expansion.
-// Counting calls as if all 58 were distinct would reject the unchanged pin.
-func checkConstructorParity(t *testing.T, root string, export BugHuntExport) {
-	t.Helper()
-	calls, err := constructorCounts(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expanded := map[string]int{"measured": 0, "interpolated": 0, "cost": 0}
-	// Explicit alias expansions observed in the pinned AST, not inferred from
-	// equal ranks: shared sonnet55Rank, opus55Rank, sol61Rank, lunaRank and measured13.
-	aliases := []struct{ name, target, kind string }{
-		{"sonnet", "claude-sonnet-5-5", "interpolated"},
-		{"opus", "claude-opus-5-5", "interpolated"},
-		{"sol", "gpt-6.1-sol", "interpolated"},
-		{"luna", "gpt-6-luna", "interpolated"},
-		{"muse-spark", "muse-spark-1.3-contributor", "measured"},
-	}
-	paths, err := sourcePaths(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared := map[string]string{}
-	for _, path := range paths {
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			if lit, ok := n.(*ast.CompositeLit); ok {
-				var id, target string
-				for _, e := range lit.Elts {
-					if kv, ok := e.(*ast.KeyValueExpr); ok {
-						if functionName(kv.Key) == "ID" {
-							id, _ = literalString(kv.Value)
-						}
-						if functionName(kv.Key) == "AliasOf" {
-							target, _ = literalString(kv.Value)
-						}
-					}
-				}
-				if id != "" && target != "" {
-					declared[id] = target
+func TestBugHuntJSONInterchange(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		omitSource bool
+	}{{"accessor-export", false}, {"implicit-pinned-source", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := pinnedBugHunt(t)
+			if tc.omitSource {
+				for i := range v.Rows {
+					v.Rows[i].SourceVersion = ""
 				}
 			}
-			return true
+			raw, err := canonical.Marshal(v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, _, err := BugHunt(raw, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			direct, _, err := ImportBugHunt(pinnedBugHunt(t), "")
+			if err != nil || !reflect.DeepEqual(decoded, direct) {
+				t.Fatalf("public JSON workflow changed observations: %v", err)
+			}
 		})
 	}
-	for _, alias := range aliases {
-		if declared[alias.name] != alias.target {
-			t.Fatalf("alias expansion no longer declared: %s -> %s", alias.name, alias.target)
-		}
-		var row, target *BugHuntRow
-		for i := range export.Rows {
-			x := &export.Rows[i]
-			if x.ModelName == alias.name && x.Kind == alias.kind {
-				row = x
-			}
-			if x.ModelName == alias.target && x.Kind == alias.kind {
-				target = x
-			}
-		}
-		if row == nil || target == nil || row.Value != target.Value || row.Effort != target.Effort {
-			t.Fatalf("alias claims missing or unequal: %s", alias.name)
-		}
-		expanded[alias.kind]++
-	}
-	exported := map[string]int{"measured": 0, "interpolated": 0, "cost": 0}
-	for _, row := range export.Rows {
-		exported[row.Kind]++
-	}
-	for _, kind := range []string{"measured", "interpolated", "cost"} {
-		if calls[kind]+expanded[kind] != exported[kind] {
-			t.Fatalf("independent constructor parity failed for %s: %d calls + %d aliases != %d exported claims", kind, calls[kind], expanded[kind], exported[kind])
-		}
-	}
-	total := calls["measured"] + calls["interpolated"] + calls["cost"]
-	if total+len(aliases) != len(export.Rows) {
-		t.Fatalf("constructor count %d + aliases %d != claim count %d", total, len(aliases), len(export.Rows))
-	}
-	t.Logf("independent AST: %d constructor calls (%d/%d/%d) + %d declared alias expansions = %d exported claims (%d/%d/%d)", total, calls["measured"], calls["interpolated"], calls["cost"], len(aliases), len(export.Rows), exported["measured"], exported["interpolated"], exported["cost"])
 }

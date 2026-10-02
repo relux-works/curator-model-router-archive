@@ -1,21 +1,21 @@
 package evidence
 
 import (
-	"embed"
 	"fmt"
+
 	"github.com/relux-works/curator-model-router/pkg/canonical"
-	"github.com/relux-works/skill-agents-management/pkg/vendorplugin"
+	"github.com/relux-works/skill-agents-management/pkg/vendorplugin/benchdata"
 )
 
-const ModuleVersion = "v0.5.32"
-
-//go:embed data/bughunt-export.json
-var moduleData embed.FS
+const (
+	ModuleVersion = "v0.5.40"
+	// These are release-declared retrieval/import metadata, never clock readings.
+	bugHuntReleaseAt      = "2026-10-01T00:00:00Z"
+	bugHuntMappingVersion = "bughunt-model-map-v1"
+)
 
 // BugHuntExport is the data-only interchange shape for the module. Registry
 // facts and all bench claims are exported together; no vendor plugin is loaded.
-// TODO(contract): module should export vendorplugin.BugHuntRows() and
-// RegistryFacts() from a data-only package, without requiring exec plugins.
 type BugHuntExport struct {
 	SchemaVersion  string          `json:"schema_version"`
 	ModuleVersion  string          `json:"module_version"`
@@ -31,23 +31,42 @@ type ModelMapping struct {
 	ModelID      string `json:"model_id"`
 }
 type BugHuntRow struct {
-	Key       string  `json:"key"`
-	ModelName string  `json:"model_name"`
-	Effort    string  `json:"effort,omitempty"`
-	Kind      string  `json:"kind"`
-	Value     float64 `json:"value"`
-	Cost      *Cost   `json:"cost,omitempty"`
-	OriginRef string  `json:"origin_ref"`
+	Key           string  `json:"key"`
+	ModelName     string  `json:"model_name"`
+	Effort        string  `json:"effort,omitempty"`
+	Kind          string  `json:"kind"`
+	Value         float64 `json:"value"`
+	Cost          *Cost   `json:"cost,omitempty"`
+	OriginRef     string  `json:"origin_ref"`
+	Denominator   *int64  `json:"denominator,omitempty"`
+	SourceVersion string  `json:"source_version,omitempty"`
 }
 
+// PinnedExport constructs an independent export from the compiled data-only
+// accessors. The identity mapping is explicit and versioned.
 func PinnedExport() (BugHuntExport, error) {
-	var v BugHuntExport
-	b, err := moduleData.ReadFile("data/bughunt-export.json")
-	if err != nil {
-		return v, err
+	v := BugHuntExport{
+		SchemaVersion: SchemaVersion, ModuleVersion: ModuleVersion,
+		ImportedAt: bugHuntReleaseAt, RetrievedAt: bugHuntReleaseAt,
+		MappingVersion: bugHuntMappingVersion,
+		Models:         []RegistryModel{}, Mapping: []ModelMapping{}, Rows: []BugHuntRow{},
 	}
-	err = Decode(b, &v)
-	return v, err
+	for _, fact := range benchdata.RegistryFacts() {
+		v.Models = append(v.Models, RegistryModel{ModelID: fact.ModelID, Efforts: fact.Efforts})
+		v.Mapping = append(v.Mapping, ModelMapping{ExternalName: fact.ModelID, ModelID: fact.ModelID})
+	}
+	for _, row := range benchdata.BugHuntRows() {
+		var cost *Cost
+		if row.Cost != nil {
+			cost = &Cost{TokensIn: row.Cost.TokensIn, TokensOut: row.Cost.TokensOut, USD: row.Cost.USD, WallS: row.Cost.WallS}
+		}
+		v.Rows = append(v.Rows, BugHuntRow{
+			Key: row.Key, ModelName: row.ModelID, Effort: row.Effort,
+			Kind: row.Kind, Value: row.Value, Denominator: row.Denominator,
+			Cost: cost, OriginRef: row.OriginRef, SourceVersion: row.SourceVersion,
+		})
+	}
+	return v, v.Registry().Validate()
 }
 func (v BugHuntExport) Registry() Registry {
 	return Registry{SchemaVersion, Identity{"skill-agents-management", v.ModuleVersion}, v.Models}
@@ -68,7 +87,7 @@ func BugHunt(raw []byte, importedAt string) (Import, Report, error) {
 	return ImportBugHunt(v, importedAt)
 }
 func ImportBugHunt(v BugHuntExport, at string) (Import, Report, error) {
-	if v.SchemaVersion != SchemaVersion || v.ModuleVersion != ModuleVersion || v.MappingVersion != "bughunt-model-map-v1" {
+	if v.SchemaVersion != SchemaVersion || v.ModuleVersion != ModuleVersion || v.MappingVersion != bugHuntMappingVersion {
 		return Import{}, Report{}, refuse("evidence_bughunt_version", "unsupported export or mapping version")
 	}
 	if err := canonical.CheckOrdered(v.Mapping, func(m ModelMapping) string { return m.ExternalName }); err != nil {
@@ -92,10 +111,22 @@ func ImportBugHunt(v BugHuntExport, at string) (Import, Report, error) {
 	}
 	doc := EmptyImport("bug-hunt", Identity{"bughunt", "2"}, at)
 	doc.MeasuredBy = "third_party"
-	doc.Benchmarks = []Benchmark{{ID: "bug-hunt-bench", Version: "2026-09-13", Publisher: "bug-hunt", Categories: []CategoryCoverage{{"code.fix", "planted bug fixes verified blind"}}, Metrics: []Metric{{Name: "fixed", Unit: "bugs", Direction: "higher_better", Scale: &Scale{0, float64(vendorplugin.BugHuntBenchTotal)}, Description: "planted bugs fixed"}, {Name: "list_cost", Unit: "usd", Direction: "lower_better", Description: "list cost of the bench run"}}, GradingMethod: "tests"}}
+	doc.Benchmarks = []Benchmark{{ID: "bug-hunt-bench", Version: "2026-09-13", Publisher: "bug-hunt", Categories: []CategoryCoverage{{"code.fix", "planted bug fixes verified blind"}}, Metrics: []Metric{{Name: "fixed", Unit: "bugs", Direction: "higher_better", Scale: &Scale{0, float64(benchdata.BugHuntBenchTotal)}, Description: "planted bugs fixed"}, {Name: "list_cost", Unit: "usd", Direction: "lower_better", Description: "list cost of the bench run"}}, GradingMethod: "tests"}}
 	for _, row := range v.Rows {
 		if row.Key == "" || row.ModelName == "" || row.OriginRef == "" || !member(row.Kind, "measured", "interpolated", "cost") {
 			return doc, Report{}, refuse("evidence_bughunt_row", "invalid bench row")
+		}
+		if row.SourceVersion != "" && row.SourceVersion != benchdata.BugHuntSourceVersion {
+			return doc, Report{}, refuse("evidence_bughunt_version", "unsupported benchmark source version")
+		}
+		// Fixed denominators describe the common benchmark scale. Only measured
+		// fixed rows also have a sample count; cost has neither denominator nor scale.
+		if row.Kind == "cost" {
+			if row.Denominator != nil {
+				return doc, Report{}, refuse("evidence_bughunt_denominator", "cost row must not have a denominator")
+			}
+		} else if row.Denominator == nil || *row.Denominator != int64(benchdata.BugHuntBenchTotal) {
+			return doc, Report{}, refuse("evidence_bughunt_denominator", "fixed row denominator must equal the declared benchmark scale")
 		}
 		model := row.ModelName
 		resolution := "unresolved"
@@ -120,7 +151,7 @@ func ImportBugHunt(v BugHuntExport, at string) (Import, Report, error) {
 			}
 		}
 		if row.Kind == "measured" {
-			count := int64(vendorplugin.BugHuntBenchTotal)
+			count := *row.Denominator
 			o.SampleCount = &count
 		}
 		doc.Observations = append(doc.Observations, o)

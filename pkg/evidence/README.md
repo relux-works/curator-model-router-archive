@@ -60,51 +60,84 @@ it cannot make `current` refer to partly written bytes.
 
 ## Bug Hunt interchange
 
-The dependency is pinned to `skill-agents-management v0.5.32`. Its complete vendor
-bench table lacks an accessor that can be used without importing executable
-vendor plugins. `BugHuntExport` is the supported JSON fallback:
+The dependency is pinned to `skill-agents-management v0.5.40`. `PinnedExport`
+builds its interchange document in memory from the data-only
+`pkg/vendorplugin/benchdata.BugHuntRows()` and `RegistryFacts()` accessors.
+`PinnedRegistry`, `BugHunt` and `ImportBugHunt` retain their public APIs; JSON file
+imports remain supported. The explicit identity mapping is versioned as
+`bughunt-model-map-v1`:
 
 - `schema_version`, `module_version`, `mapping_version`, `imported_at`, `retrieved_at`;
 - `models`: `{model_id, efforts[]}` (no-effort axes explicitly use `none`);
 - `mapping`: `{external_name, model_id}`, ordered by external name;
-- `rows`: `{key, model_name, effort?, kind, value, cost?, origin_ref}`, ordered by key.
+- `rows`: `{key, model_name, effort?, kind, value, denominator?, cost?, origin_ref, source_version?}`, ordered by key.
 
-`kind` is `measured`, `interpolated` or `cost`. A cost claim is a `list_cost`
-observation with `evidence_kind: measured` and `cost.usd`. It is never used as a
-quality measurement. The pinned module's cost annotation supplies the launched
-max effort and USD list cost; the remaining annotation stays in the referenced
-module artifact. An interpolation has unknown effort because the module does
-not state one. The observation time is `unknown`; the leaderboard update date is
-a benchmark version, never an invented measurement time.
+`kind` is `measured`, `interpolated` or `cost`. Measured and interpolated fixed
+rows require denominator 105, the declared benchmark scale. Only measured fixed
+rows gain `sample_count: 105`. An interpolation retains unknown effort and no
+sample count; registry vocabulary never fills observation effort. A cost claim
+has no denominator and becomes a `list_cost` observation with
+`evidence_kind: measured` and explicit `cost.usd`, agreeing with the value.
+Zero cost remains zero; absent cost stays unknown. Cost never contributes a
+quality score. Invalid or inconsistent denominators return the typed refusal
+`evidence_bughunt_denominator`. Unsupported source versions return
+`evidence_bughunt_version`; an omitted source version in JSON uses the pinned
+benchmark publication. The accessor's source version is
+`bug-hunt-bench@2026-09-13`, independently of the module tag.
 
-The export in `pkg/evidence/data/` records generation time
-`2026-10-01T00:00:00Z` as fixed `imported_at` and `retrieved_at` metadata.
-The importer uses these values by default; `--imported-at` explicitly overrides
-only the import time. Re-importing a pin retains the import digest and all
-observation addresses; the store reports `already present` for duplicates.
+Release-declared `imported_at` and `retrieved_at` metadata are fixed at
+`2026-10-01T00:00:00Z`. These are import/retrieval metadata, never measurement
+times; `observed_at` remains `unknown`. `--imported-at` overrides only the import
+time. Reimporting the same pin retains observation addresses and the default
+import digest; stores report `already present` for duplicates. Each accessor
+export and registry is independent, including nested effort, denominator and
+cost data, and concurrent callers share no mutable export state.
 
-The checked-in JSON was generated statically from the module's public data
-literals, never transcribed. The parity test independently walks every vendor model
-literal and the frozen runtime model declarations across every non-test Go file.
-A separate AST walk counts every bench constructor call. The actual pin has 53
-calls (11 measured, 41 interpolated, 1 cost), plus five declared alias expansions
-(one measured, four interpolated), yielding 58 exported claims (12/45/1). The
-cross-check verifies both alias declarations and corresponding exported claims.
-Missing fields fail; only the explicitly allow-listed, dynamic local-models
-template may have zero claims. It fails on missing rows,
-unknown declaration syntax or a changed cost grammar. Production reads only JSON
-and the exported bench total; it never imports a vendor implementation, registers
-plugins, calls availability, executes a harness or fetches data. Regenerate after
-review with `go test ./pkg/evidence -run TestAcceptance2 -args -update-evidence`.
+`data/bughunt-export.json` is a reviewed JSON interchange vector, not a production
+input to `PinnedExport`. The frozen `testdata/bughunt-v0.5.32-export.json` and
+canonical import retain the original source baseline. Same-source parity first
+compares every fact, registry projection and identity mapping, then restores
+only the old `raw_artifact_ref` pin and recomputes observation addresses. The
+entire canonical import must equal the baseline. This proves unchanged
+observations under the same source identity before updating any new-source
+vectors. The `v0.5.40` canonical import and vector manifest separately pin the
+export, import, registry, snapshot and every observation address.
 
-The module should supply data-only `BugHuntRows()` and `RegistryFacts()` accessors;
-see `W2-REPORT.md`. Until then the JSON export is the explicit pinned registry
-projection for the benchmark scope. `--registry FILE` supplies another frozen
-projection for native imports and local models. `Add` refuses a different
-projection with `evidence_registry_mismatch` and points to
-`cmr evidence rebind --registry FILE`. Rebind creates a new snapshot over the
-same import digests with the supplied registry; earlier snapshots and imports
-remain immutable and replay with their original resolution.
+The parity invariant imports all 58 accessor claims: 12 fixed/measured,
+45 fixed/interpolated and 1 list_cost/measured. It checks both counts and the
+complete set of row keys, plus subject, effort, kind, value, denominator/sample
+semantics, cost and origin for every claim. Constructor/transcription ownership
+belongs to the module; the router no longer exports AST declarations or invokes
+`go list` to discover module source. The R1 guard follows the complete evidence
+production import closure across build tags and platform suffixes, including
+transitive standard-library imports. It refuses vendor implementations, root
+`vendorplugin`, `agentic` and `os/exec`; it runs no subprocess. The source guard
+uses compiled accessor source locations and requires untrimmed source paths.
+Production uses only compiled facts: no vendor registration, availability
+checks, harness execution, network retrieval or clock readings.
+
+After same-source parity passes, regenerate and review vectors with the
+required wrapper, named packages and offline environment. `$BUILD_WRAPPER` is
+the operator-supplied build-lock wrapper of the host (it serializes builds on a
+shared machine); any command that runs its arguments works:
+
+```sh
+"$BUILD_WRAPPER" env GOENV=off GOWORK=off GOTOOLCHAIN=local GOFLAGS=-mod=mod GOPROXY=off GOSUMDB=off CMR_UPDATE_EVIDENCE=1 go test -p 1 ./pkg/evidence/... ./cmd/cmr/... -run '^TestBugHuntPinnedVectors$' -count=1
+```
+
+Advancing the module pin changes `raw_artifact_ref` and the frozen registry
+identity. New observation, import and snapshot addresses are intentional even
+when benchmark facts are identical. Stable `origin_ref` preserves publication
+deduplication across pins and measured aliases.
+
+**Existing stores need `cmr evidence rebind --registry FILE` for the new
+registry**, using a JSON serialization of `PinnedRegistry()` as `FILE`.
+`--registry FILE` also supplies another frozen projection for native imports and
+local models. `Add` refuses a different projection with
+`evidence_registry_mismatch` and names the rebind command. Rebind creates a new
+snapshot over the same import digests; earlier snapshots, registry files and
+imports remain immutable and replay with their original resolution. Rebind
+before importing the new pin; retain old imports for historical replay.
 
 ## Derivation and inspection
 

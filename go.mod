@@ -2,4 +2,4 @@ module github.com/relux-works/curator-model-router
 
 go 1.25.5
 
-require github.com/relux-works/skill-agents-management v0.5.32
+require github.com/relux-works/skill-agents-management v0.5.40

@@ -1,6 +1,19 @@
 // Package evidence implements append-only evidence documents and replayable
 // suitability views. All times are explicit inputs; importers do no network I/O.
 //
+// Bug Hunt uses the pinned skill-agents-management v0.5.40 benchdata leaf's
+// compiled rows and registry facts, with a declared versioned identity mapping
+// and fixed release import/retrieval metadata. Fixed denominators retain scale
+// 105; only measured fixed claims have sample counts. Interpolations keep
+// unknown effort, and cost claims remain non-quality list_cost observations.
+// Invalid denominators return evidence_bughunt_denominator. No vendor adapter,
+// agentic package, subprocess, plugin registration, or clock is used.
+//
+// A module pin upgrade changes raw artifact and registry identities, so new
+// content addresses are expected. Stable publication origins preserve dedup.
+// Existing stores require cmr evidence rebind with the new registry; old
+// snapshots remain replayable using their immutable registry projections.
+//
 // TODO(decision): the CLI default is XDG_DATA_HOME/curator/model-router/evidence,
 // with the local share directory as fallback. This keeps derived routing data
 // separate from credentials and launch configuration. Store always requires an

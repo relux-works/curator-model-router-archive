@@ -1,4 +1,2 @@
-github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=
-github.com/pelletier/go-toml/v2 v2.4.3/go.mod h1:2gIqNv+qfxSVS7cM2xJQKtLSTLUE9V8t9Stt+h56mCY=
-github.com/relux-works/skill-agents-management v0.5.32 h1:84glGWwg4fwBaWcoJQbRc1xnNHELiH9AvIeppjAD6hc=
-github.com/relux-works/skill-agents-management v0.5.32/go.mod h1:+WXoKeo9R5EWN/X/diQkbNUV8cnPXDpHjpGFY+RnxTM=
+github.com/relux-works/skill-agents-management v0.5.40 h1:uJ0Y9aihDByYX9Kq3BahpVviB5d2qbQekVYsfSSqjF8=
+github.com/relux-works/skill-agents-management v0.5.40/go.mod h1:+WXoKeo9R5EWN/X/diQkbNUV8cnPXDpHjpGFY+RnxTM=
