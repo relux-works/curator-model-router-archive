@@ -74,7 +74,7 @@ The slices of `model-routing.md` §3, mapped to workstreams:
 | --- | --- | --- | --- |
 | A0 | one resolver, `config-order` parity, decision record, contract appendix | router half: W0 and W1; task-board half: W4 and W5 | M4 (with agent selection S1) |
 | A1 | machine half: catalog bindings, `bound_on_this_machine`, dependent settings | W5 | M4 |
-| B | evidence snapshots (Bug Hunt adapter, own evals), rule assessor, deterministic estimator; headroom-aware ordering in shadow mode | W2, then W1 and W5 | M8, after M5b availability |
+| B | evidence snapshots (Bug Hunt adapter, own evals), rule assessor, deterministic estimator; headroom-aware ordering in shadow mode; normative design: [spec/slice-b.md](slice-b.md) | W2, then W1 and W5 | M8, after M5b availability |
 | C | semantic assessment in shadow mode (Jev or a structured LLM, chosen explicitly) | later | M8 |
 | D | opt-in selection at spawn, two-phase validation, effective-configuration proof | later, needs W5 | M8 |
 | E | calibration and measured gain on own tasks | later | M8 |

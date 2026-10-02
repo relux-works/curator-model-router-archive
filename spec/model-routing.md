@@ -228,6 +228,8 @@ The object shapes are in R3 and R8; the exact comparison and replay rules are wr
 
 ## 6. Closed decisions and remaining choices
 
+> **Note 2026-10-02.** [spec/slice-b.md](slice-b.md) specifies slice B's deterministic estimator, C2 partition, C-quality-cost strategies and internal `evalrun` review set; its seven operator forks use reversible defaults in shadow/recommend only.
+
 Closed by this document: the router is a library with caller adapters; candidates are runtime bindings with the LP fingerprint members; the four-question split and its owners; pure selector; four modes with a free-field mask; decision document shape; two-phase validation in task-board; dependency on LP Phase 1 for the machine half. Added 2026-09-22 after the independent review: dependent settings (network profile, context profile) are resolved by the caller and fixed unless the mask frees them, so the router never switches a route; engine availability is two facts, `ready` and `ensurable`, and a cold but ensurable engine stays eligible with a start cost; cross-effort evidence exists only as `transferred`; validation compares member-wise; slice A is split into A0 (now) and A1 (after LP Phase 1); the contract appendix of §5 is an A0 deliverable. After the second review: `decision_id` is content-addressed or referenced together with its digest, so a signed assignment binds one immutable decision to the execution parameters it carries.
 
 Added 2026-10-01 from the operator decisions of 2026-09-30:
