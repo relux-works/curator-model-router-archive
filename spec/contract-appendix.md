@@ -155,6 +155,47 @@ member-wise spawn validation, and delivery protocol portion belongs to W4.
     output attempt the same channel rule and retain the refusal exit code.
     CLI codes are `cmr_unknown_subcommand`, `cmr_invalid_arguments`, and
     `cmr_output_failed`.
+12. C2 adds optional `EvaluationSnapshot.estimator_partition`. Its exact shape
+    is `{schema_version, estimator_version, groups:[{id, candidate_ids}]}`,
+    with schema `estimator-partition-v1`. An absent partition MUST be omitted,
+    never serialized as null or synthesized as an empty partition. All former
+    evaluation bytes and digests remain unchanged when it is absent. Presence
+    is included in the evaluation digest and therefore the bound decision id.
+    Strict loaders enforce exact JSON tags and refuse unknown members and null.
+    Groups are keyed by nonempty opaque id, ordered lexically by UTF-8 bytes;
+    candidate ids within each group are also nonempty, unique and lexical.
+    Hashing and validation MUST NOT reorder or repair either list. Required
+    groups/member lists are non-nil (`contract_missing_field`); empty strings
+    are `contract_empty_field`. Unsorted or duplicate keys retain
+    `canonical_unordered` and `canonical_duplicate_key`.
+    `EstimatorPartition.Validate` checks structure and supported schema.
+    `ValidateAgainst(candidates, estimates)` additionally requires disjoint,
+    exhaustive admitted membership and exactly one estimate per admitted id.
+    Singleton groups are valid; `groups:[]` is valid only for empty candidates
+    and estimates. Bad schema, empty groups, overlap, extra/missing members, or
+    a non-bijective estimate set are `routing_invalid_estimator_partition` in
+    C2. The dedicated `routing_estimate_set_mismatch` is reserved for the
+    separate C-quality-cost change.
+    Partition estimator version MUST be supported (`suitability-bp-v1` in C2)
+    and equal every estimate version. Evaluation validation also requires a
+    matching `evaluator_versions` entry named `fitness-estimator`; bundle
+    loading, routing, explanation and decision construction additionally check
+    `versions.estimator_version`. Missing, unknown, unsupported or inconsistent
+    bindings are `routing_estimator_version_mismatch`, except that empty
+    required strings retain `contract_empty_field`.
+    `fitness-band` headroom consumes only these opaque groups and member lists;
+    it never rebuilds groups from fitness, coverage or quota `band_width_bp`.
+    Only subscription members permute over their existing base slots; metered,
+    local, singleton and ungrouped slots stay fixed. Without the partition,
+    retain `headroom_partition_required` before calling the base strategy.
+    Estimation replay (owned by the subsequent evidence implementation) MUST
+    regenerate and compare a stored partition before selection; a valid
+    substituted membership is a replay difference at
+    `$.routing.evaluation.estimator_partition`. An absent partition stays absent.
+    C2 selection replay uses the stored evaluation and does not re-estimate.
+    Producer bucket/label and estimation-replay expectations are frozen in
+    `pkg/routing/testdata/c2/` as contract fixtures; they do not implement the
+    estimator, quality selector or evidence-owned estimation replay.
 
 Vectors live in `pkg/canonical/testdata/vectors/`: `.input.json`, exact
 `.canonical.json` bytes (no newline), `.digest`, or `.error` for a refusal.
@@ -258,3 +299,17 @@ or encoder. Normal runs only compare.
 | `policy-default` | `sha256:cc2682ca409195e06263f4a12627eda2014bee142f3ec34ac7b5d26dfd8b0117` |
 | `policy-nondefault` | `sha256:c7c16d82cd085867dbb82c367b7437ca06356bc356c52c7b28a0ccaa212ed4c4` |
 | `decision` | `sha256:1228405101a544c94998bae4d1d099908af4913b75d814c45c4f333e16ecdf31` |
+
+C2 fixtures use the existing routing `-update` flag, after semantic assertions.
+Normal runs only compare; all former goldens remain unchanged. The partition,
+evaluation and decision below pin canonical bytes and digests (decision uses
+content id). Bucket fixtures additionally pin exact producer labels and the
+config digests for widths 1 and 250; unknown values have separate singleton ids.
+
+| C2 fixture | Digest |
+| --- | --- |
+| `c2/partition` | `sha256:6dc91fd64d172816ed8c6822848f3325ac4b27ac1eb389d5ab12a70a602470da` |
+| `c2/evaluation` | `sha256:dab4c365b4d7266bed615c115082546cea1be8ad79100701c6a51a37873fab2d` |
+| `c2/decision` | `sha256:00735756009cd38045c6bd4c12c463854c4c08fed7002b3d627516076a7934fd` |
+| Producer config, fitness/coverage widths 1/1 | `sha256:60f42d9a9500dad6e4c336153c489b40493aec8fb781d759636a6ffe8861a73a` |
+| Producer config, fitness/coverage widths 250/1 | `sha256:1fb369fc55aecb2c366e07618df119640deb315a9f60ca329d245a6510dd2b28` |

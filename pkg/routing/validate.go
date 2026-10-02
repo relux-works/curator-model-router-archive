@@ -168,6 +168,29 @@ func (v EvaluationSnapshot) Validate() error {
 			return err
 		}
 	}
+	if v.EstimatorPartition != nil {
+		// An evaluation can check its own estimate set; admitted membership is
+		// checked later against the candidate snapshot at the bundle boundary.
+		candidates := make([]ExecutionCandidate, len(v.Estimates))
+		for i, e := range v.Estimates {
+			candidates[i].ID = e.CandidateID
+		}
+		if err := v.EstimatorPartition.ValidateAgainst(candidates, v.Estimates); err != nil {
+			return err
+		}
+		found := false
+		for _, provenance := range v.EvaluatorVersions {
+			if provenance.Name == "fitness-estimator" {
+				found = true
+				if provenance.Version != v.EstimatorPartition.EstimatorVersion {
+					return fail(EstimatorVersionMismatch, "fitness-estimator provenance differs from partition")
+				}
+			}
+		}
+		if !found {
+			return fail(EstimatorVersionMismatch, "partition requires fitness-estimator provenance")
+		}
+	}
 	return nil
 }
 

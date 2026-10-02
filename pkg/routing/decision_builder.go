@@ -58,6 +58,13 @@ func LoadBundle(raw []byte) (DecisionBundle, error) {
 	if b.SchemaVersion == "" {
 		return b, fail(ContractEmptyField, "bundle schema_version is required")
 	}
+	// Mode off evaluates nothing (decision-bundle.md, R7), so the partition
+	// boundary is checked only where a strategy runs or a decision is built.
+	if b.Policy.Mode != ModeOff {
+		if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+			return b, err
+		}
+	}
 	return b, nil
 }
 func decodeStrict(raw []byte, dst any) error {
@@ -103,6 +110,9 @@ func LoadDecision(raw []byte) (RoutingDecision, error) {
 func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p RoutingPolicy, r SelectionResult, o DecisionOptions) (*RoutingDecision, error) {
 	if p.Mode == ModeOff {
 		return nil, nil
+	}
+	if err := validatePartitionBoundary(e, s.Candidates, o.EstimatorVersion); err != nil {
+		return nil, err
 	}
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -165,7 +175,7 @@ func BuildDecision(t TaskEnvelope, s CandidateSnapshot, e EvaluationSnapshot, p 
 	}
 	abstainReasons := map[string][]ReasonCode{}
 	if r.Abstention != nil && p.Headroom.Enabled {
-		ex, explainErr := Explain(DecisionBundle{Envelope: t, Snapshot: s, Evaluation: e, Policy: p})
+		ex, explainErr := Explain(DecisionBundle{Envelope: t, Snapshot: s, Evaluation: e, Policy: p, Versions: o})
 		if explainErr != nil {
 			return nil, explainErr
 		}
@@ -235,6 +245,9 @@ func Route(b DecisionBundle) (RouteResult, error) {
 	if b.Policy.Mode == ModeOff {
 		return RouteResult{EffectiveCandidate: baseline}, nil
 	}
+	if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+		return RouteResult{}, err
+	}
 	strategy, err := Strategy(b.Policy)
 	if err != nil {
 		return RouteResult{}, err
@@ -300,6 +313,9 @@ func BaselineFallback(d RoutingDecision, snapshot CandidateSnapshot, baseline Ex
 }
 
 func Explain(b DecisionBundle) (Explanation, error) {
+	if err := validatePartitionBoundary(b.Evaluation, b.Snapshot.Candidates, b.Versions.EstimatorVersion); err != nil {
+		return Explanation{}, err
+	}
 	base, err := Strategy(b.Policy)
 	if err != nil {
 		return Explanation{}, err

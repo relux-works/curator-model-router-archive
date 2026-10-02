@@ -176,13 +176,14 @@ type Estimate struct {
 	EstimatorVersion      string   `json:"estimator_version"`
 }
 type EvaluationSnapshot struct {
-	SchemaVersion          string       `json:"schema_version"`
-	EvidenceSnapshotDigest string       `json:"evidence_snapshot_digest"`
-	Measurements           []string     `json:"measurements"` // public record addresses
-	Rubric                 *Rubric      `json:"rubric,omitempty"`
-	Assessments            []Assessment `json:"assessments"`
-	Estimates              []Estimate   `json:"estimates"`
-	EvaluatorVersions      []Provenance `json:"evaluator_versions"`
+	SchemaVersion          string              `json:"schema_version"`
+	EvidenceSnapshotDigest string              `json:"evidence_snapshot_digest"`
+	Measurements           []string            `json:"measurements"` // public record addresses
+	Rubric                 *Rubric             `json:"rubric,omitempty"`
+	Assessments            []Assessment        `json:"assessments"`
+	Estimates              []Estimate          `json:"estimates"`
+	EvaluatorVersions      []Provenance        `json:"evaluator_versions"`
+	EstimatorPartition     *EstimatorPartition `json:"estimator_partition,omitempty"`
 }
 
 // FitnessEstimator must be pure, deterministic, context-free, with no clock,

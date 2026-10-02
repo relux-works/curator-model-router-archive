@@ -94,6 +94,9 @@ type Explanation struct {
 
 func ptr64(v int64) *int64 { return &v }
 func groupFor(c ExecutionCandidate, p HeadroomPolicy) string {
+	if p.Equivalence == FitnessBand {
+		return ""
+	}
 	if p.Equivalence == DeclaredGroups {
 		for i, g := range p.Groups {
 			for _, pair := range g {
@@ -252,9 +255,13 @@ func (h HeadroomStrategy) evaluate(s CandidateSnapshot, e EvaluationSnapshot, p 
 	if err := p.Validate(); err != nil {
 		return SelectionResult{}, ex, err
 	}
-	// TODO(contract): Estimate has no versioned partition input for fitness-band.
 	if p.Headroom.Equivalence == FitnessBand {
-		return SelectionResult{}, ex, fail("headroom_partition_required", "fitness-band requires an estimator partition")
+		if e.EstimatorPartition == nil {
+			return SelectionResult{}, ex, fail(HeadroomPartitionRequired, "fitness-band requires an estimator partition")
+		}
+		if err := e.ValidateAgainst(s.Candidates); err != nil {
+			return SelectionResult{}, ex, err
+		}
 	}
 	if h.Base == nil {
 		return SelectionResult{}, ex, fail("routing_invalid_selection", "headroom requires a base strategy")
@@ -277,6 +284,14 @@ func (h HeadroomStrategy) evaluate(s CandidateSnapshot, e EvaluationSnapshot, p 
 	copy(order, base.Order)
 	groups := [][]int{}
 	groupIDs := []string{}
+	partitionGroups := map[string]string{}
+	if p.Headroom.Equivalence == FitnessBand {
+		for _, group := range e.EstimatorPartition.Groups {
+			for _, id := range group.CandidateIDs {
+				partitionGroups[id] = group.ID
+			}
+		}
+	}
 	for i, r := range base.Order {
 		var c ExecutionCandidate
 		for _, v := range s.Candidates {
@@ -286,6 +301,9 @@ func (h HeadroomStrategy) evaluate(s CandidateSnapshot, e EvaluationSnapshot, p 
 			}
 		}
 		x := quantities(c, int64(i), s, p.Headroom, t.Role)
+		if p.Headroom.Equivalence == FitnessBand {
+			x.Group = partitionGroups[c.ID]
+		}
 		for _, code := range r.ReasonCodes {
 			x.ReasonCodes = addReason(x.ReasonCodes, code)
 		}
