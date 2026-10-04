@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runHelp(nil, stdout, stderr)
 	}
 	switch args[0] {
+	case "recommend":
+		return runRecommend(args[1:], stdout, stderr)
+	case "usage":
+		return runUsage(args[1:], stdout, stderr)
+	case "spawn":
+		return runSpawn(args[1:], stdout, stderr)
 	case "route":
 		return runRoute(args[1:], stdout, stderr)
 	case "explain":
@@ -43,13 +50,35 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 func hasJSON(args []string) bool {
-	for _, arg := range args {
-		if arg == "--json" {
-			return true
+	// This is also used on invalid-input paths. Known value options still consume
+	// a token, so a value named --json never changes the output channel.
+	valueFlags := strings.Fields("role task-class difficulty language agent model reasoning-effort catalog policy candidates platform host story producer-family exclude mode store registry importer imported-at mapping runtime ttl input decision snapshot derivation project-reqs evaluated-at reason author kind scope text id file efforts harness-version-range statement polarity categories languages platforms roles basis confidence author-kind created-at review-by supersedes evidence-ref at")
+	asJSON := false
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			break
+		}
+		key, value, inline := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
+		if !strings.HasPrefix(args[i], "-") {
+			continue
+		}
+		if key == "json" {
+			asJSON = true
+			if inline {
+				asJSON, _ = strconv.ParseBool(value)
+			}
+			continue
+		}
+		for _, name := range valueFlags {
+			if key == name && !inline {
+				i++
+				break
+			}
 		}
 	}
-	return false
+	return asJSON
 }
+
 func writeRefusal(err *Refusal, asJSON bool, stdout, stderr io.Writer) int {
 	if asJSON {
 		_ = json.NewEncoder(stdout).Encode(struct {

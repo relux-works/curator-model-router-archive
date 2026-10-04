@@ -1,0 +1,100 @@
+# Operator rulings in force on 2026-10-04. Decode into recommend.DefaultPolicy().
+# Exact canonical names only; the CLI resolves aliases and supplies the hostname.
+# Keep rule order: hard filters accumulate and forbid always beats require.
+# These are operator constraints, not evidence of candidate admission.
+schema_version = "recommend-policy-v1"
+
+[tier_edges]
+s = 62
+a = 56
+b = 45
+
+[[rules]]
+id = "mini-codex-first"
+source = "tb-R164"
+rationale = "Prefer Codex on the mini inside each qualified tier."
+[rules.when]
+host = "<your-mini-host>"
+[rules.prefer]
+runtimes = ["codex", "claude", "agy", "muse", "local-qwen"]
+
+[[rules]]
+id = "mini-review-astra-medium"
+source = "tb-R164"
+rationale = "Pin mini reviewers to the operator's Astra medium configuration."
+[rules.when]
+host = "<your-mini-host>"
+role = "reviewer"
+[rules.require]
+runtime = "codex"
+model = "gpt-6-astra"
+[rules.effort]
+pin = "medium"
+
+[[rules]]
+id = "codex-quota-stop"
+source = "tb-R139"
+rationale = "Stop Codex when any applicable known window, including weekly, has at most 25% headroom."
+quota_stop_bp = 2500
+[rules.when]
+runtime = "codex"
+
+[[rules]]
+id = "cross-provider-review"
+source = "tb-R121; mini exception tb-R164"
+rationale = "Review across producer families, with same-provider last resort and the explicit mini exception."
+[rules.when]
+role = "reviewer"
+[rules.cross_provider_review]
+allow_same_provider_fallback = true
+except_hosts = ["<your-mini-host>"]
+
+[[rules]]
+id = "refusal-rotation"
+source = "tb-R119"
+rationale = "Honor caller --exclude runtime/model pairs after a model refuses."
+exclude = true
+[rules.when]
+
+# tb-R147: <your-other-host> pairs are documented placeholders, deliberately inactive.
+# The supplied spec names this ruling but supplies no concrete role/model pairs.
+# Fill the canonical runtime/model/effort and role, then uncomment each rule.
+# [[rules]]
+# id = "<your-other-host>-producer-pair"
+# source = "tb-R147"
+# rationale = "Use the operator's <your-other-host> producer pair once its exact values are supplied."
+# [rules.when]
+# host = "<your-other-host>"
+# role = "developer"
+# [rules.require]
+# runtime = "<fill runtime>"
+# model = "<fill canonical model>"
+# [rules.effort]
+# pin = "<fill effort>"
+#
+# [[rules]]
+# id = "<your-other-host>-reviewer-pair"
+# source = "tb-R147"
+# rationale = "Use the operator's <your-other-host> reviewer pair once its exact values are supplied."
+# [rules.when]
+# host = "<your-other-host>"
+# role = "reviewer"
+# [rules.require]
+# runtime = "<fill runtime>"
+# model = "<fill canonical model>"
+# [rules.effort]
+# pin = "<fill effort>"
+
+# Example story exception; sol resolves to gpt-6.1-sol per catalog/NOTES.md.
+# Story IDs are caller-provided; <PROJECT-ID> is the project context for this example.
+[[rules]]
+id = "story-sol-high"
+source = "per-story operator exception: <PROJECT-ID>/<STORY-ID>"
+rationale = "Pin <PROJECT-ID> story <STORY-ID> to Sol high as explicitly ruled."
+[rules.when]
+story = "<STORY-ID>"
+[rules.require]
+runtime = "codex"
+model = "gpt-6.1-sol"
+[rules.effort]
+pin = "high"

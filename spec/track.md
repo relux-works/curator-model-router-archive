@@ -8,6 +8,8 @@ Status: **DRAFT**, 2026-09-23, updated 2026-10-01.
 - `spec/evidence-format.md`: the evidence format;
 - `spec/headroom.md`: usage facts and the headroom-aware strategy.
 
+**Recommend:** [spec/recommend.md](recommend.md) defines the plug-and-play task-aware selector. `pkg/recommend` supplies the pure catalog/policy engine, explanations and replay; the command adapter supplies admission, frozen usage and spawn integration.
+
 **Roadmap:**
 
 - slices A0 and A1 belong to milestone M4. The task-board half of A0 is the agent-selection resolver; the router half is W0 and W1.

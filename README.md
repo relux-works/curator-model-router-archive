@@ -1,16 +1,17 @@
 # curator-model-router
 
-Task-aware model routing for coding agents. Given a description of the work, its role and its constraints, the router chooses a launch configuration (runtime binding + model + reasoning effort) from the candidates that are already admitted and available. It records why in a decision bound to an evidence snapshot and hands the result to the caller's existing spawn gate. It never admits anything, never launches anything, and never switches accounts or egress.
+Task-aware model routing for coding agents. Given a description of the work, its role and its constraints, the router chooses a launch configuration (runtime binding + model + reasoning effort) from the candidates that are already admitted and available. It records why in a decision bound to an evidence snapshot and hands the result to the caller's existing spawn gate. The library never admits or launches anything; the CLI can connect its recommendations to task-board spawn. It never switches accounts or egress.
 
-**Status: code exists — W0 scaffold and frozen shared contracts. Routing and evidence strategies follow in W1/W2.**
+**Status: routing/evidence libraries and task-board CLI integration implemented.**
 
 ## Layout
 
 | Path | Content |
 | --- | --- |
-| `cmd/cmr/` | CLI scaffold: help and version, split by subcommand file |
+| `cmd/cmr/` | CLI commands, including recommend, usage and task-board spawn integration |
 | `pkg/canonical/` | canonical JSON, typed refusals, SHA-256 digests and golden vectors |
 | `pkg/routing/` | frozen shared contracts, usage projection, policy defaults and validation |
+| `pkg/recommend/` | pure task-aware catalog selection, hard admission/locks, explanations and replayable decisions (`spec/recommend.md`) |
 | `spec/contract-appendix.md` | normative digest contract and vector index |
 | `.github/workflows/ci.yml`, `Makefile` | tests, race checks, vet, formatting and actionlint |
 | `spec/model-routing.md` | draft specification (decisions R1–R13) |
@@ -26,3 +27,22 @@ Task-aware model routing for coding agents. Given a description of the work, its
 - The caller launches the chosen candidate through the agents-management launch plane (`skill-agents-management`), and the existing spawn gate re-validates it.
 - Usage records per `(runtime, managed home)` are facts of agents-management (`pkg/providerquota`). The router consumes them as frozen snapshot facts and uses them only to order candidates (`spec/headroom.md`).
 - Roadmap: slices A0/A1 with milestone M4, slices B–E with milestone M8, in `wiki/roadmap/ecosystem-roadmap.md`.
+
+## Quickstart
+
+```sh
+cmr help
+cmr recommend --role developer --task-class code.implement
+cmr recommend --role developer --task-class code.fix --difficulty hard --json
+cmr recommend --role reviewer --task-class review.code --delicate --host "<your-host>"
+cmr usage refresh --runtime codex --ttl 10m --json
+cmr usage show --json
+cmr spawn --task-class code.implement -- TASK --role developer --background
+cmr spawn --task-class code.fix --mode recommend --json -- TASK --role developer --background
+cmr spawn --task-class research --fanout -- TASK --role researcher --background
+cmr spawn --task-class review.code --story "<STORY-ID>" --policy ~/.curator/routing.toml -- TASK --role reviewer --background
+```
+
+Put the task brief, scope, acceptance criteria, and precondition resources on the board task before spawning. Task-board builds the agent prompt from the role template and that board state; `--instruction RESOURCE` selects a precondition resource.
+
+See [the integration guide](docs/integration.md) for policy defaults, catalog and admission overrides, modes, and usage caching.

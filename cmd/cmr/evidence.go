@@ -59,6 +59,7 @@ func parseEvidenceFlags(f *flag.FlagSet, args []string) error {
 			positions = append(positions, a)
 		}
 	}
+	options = append(options, "--")
 	options = append(options, positions...)
 	if err := f.Parse(options); err != nil {
 		return &Refusal{"cmr_invalid_arguments", "invalid flags"}

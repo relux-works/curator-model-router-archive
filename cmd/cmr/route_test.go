@@ -96,7 +96,7 @@ func TestRoutingCLIRefusals(t *testing.T) {
 		code string
 	}{
 		{[]string{"route"}, "cmr_invalid_arguments"},
-		{[]string{"route", "--input"}, "cmr_invalid_arguments"},
+		{[]string{"route", "--input="}, "cmr_invalid_arguments"},
 		{[]string{"route", "--wat", input}, "cmr_invalid_arguments"},
 		{[]string{"route", "--input", input, "--input", input}, "cmr_invalid_arguments"},
 		{[]string{"route", "--input", filepath.Join(dir, "missing")}, "cmr_input_failed"},

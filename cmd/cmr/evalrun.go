@@ -4,7 +4,6 @@ import (
 	"flag"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/relux-works/curator-model-router/pkg/evidence"
 )
@@ -77,19 +76,14 @@ func isEvalRunCommand(args []string) bool {
 	if args[0] != "import" {
 		return false
 	}
-	importer := "native"
-	for i := 1; i < len(args); i++ {
-		if args[i] == "--" {
-			break
-		}
-		if args[i] == "--importer" || args[i] == "-importer" {
-			if i+1 < len(args) {
-				i++
-				importer = args[i]
-			}
-		} else if strings.HasPrefix(args[i], "--importer=") || strings.HasPrefix(args[i], "-importer=") {
-			_, importer, _ = strings.Cut(args[i], "=")
-		}
+	f := flag.NewFlagSet("import-dispatch", flag.ContinueOnError)
+	var c evidenceFlags
+	addEvidenceFlags(f, &c)
+	importer := f.String("importer", "native", "")
+	f.String("mapping", "", "")
+	f.String("imported-at", "", "")
+	if parseEvidenceFlags(f, args[1:]) != nil {
+		return false
 	}
-	return importer == "evalrun"
+	return *importer == "evalrun"
 }

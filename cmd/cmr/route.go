@@ -16,22 +16,41 @@ func routeFlags(args []string, allowed ...string) (map[string]string, error) {
 	values := map[string]string{}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		if a == "--" {
+			if i+1 != len(args) {
+				return nil, &Refusal{"cmr_invalid_arguments", "unexpected positional arguments"}
+			}
+			break
+		}
+		key, inlineValue, inline := strings.Cut(a, "=")
+		a = key
 		if _, ok := values[a]; ok {
 			return nil, &Refusal{"cmr_invalid_arguments", "duplicate flag"}
 		}
 		if a == "--json" {
-			values[a] = "true"
+			value := "true"
+			if inline {
+				value = inlineValue
+				if value != "true" && value != "false" {
+					return nil, &Refusal{"cmr_invalid_arguments", "invalid boolean"}
+				}
+			}
+			values[a] = value
 			continue
 		}
 		found := false
 		for _, v := range allowed {
 			found = found || a == v
 		}
-		if !found || i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+		if !found || !inline && i+1 >= len(args) {
 			return nil, &Refusal{"cmr_invalid_arguments", "invalid or missing flag value"}
 		}
-		i++
-		values[a] = args[i]
+		if inline {
+			values[a] = inlineValue
+		} else {
+			i++
+			values[a] = args[i]
+		}
 	}
 	return values, nil
 }
