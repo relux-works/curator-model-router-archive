@@ -24,8 +24,9 @@ effort is choosing a row.
 The **catalog** (`catalog/catalog.json`, versioned, with provenance) has one row per configuration. A row
 carries:
 - `runtime`, `model`, `effort`, `family` (the vendor), `billing` (`subscription | local | metered`);
-- `quality`: the indices `{overall, coding}`, each 0–100 or absent. Every value has
-  `{value, kind: measured | vendor | estimate, source, as_of, stderr?}`;
+- `quality`: the indices `{overall, coding, review}`, each 0–100 or absent. Every value has
+  `{value, kind: measured | vendor | estimate, source, as_of, stderr?, n?}`. Optional `review`
+  stays in catalog-v1 and requires `kind=measured`, `stderr` and positive integer run count `n`;
 - `cost`: the relative cost per typical task, `{usd_per_task?, tokens_per_task?, kind, source, as_of}`;
 - `latency`: `fast | medium | slow`, or absent;
 - `constraints`: for example `{only_effort: "max"}` for Muse, or `not_for: ["windows"]`. Constraints are
@@ -44,6 +45,33 @@ carries:
 - The default band edges are calibrated to the researched catalog’s index scale and live in the policy,
   where operators can override them.
 - A row whose `stderr` places its interval across an edge takes the **lower** tier.
+
+For `review.*`, a measured `quality.review` supplies both ranking and tiering, with separate
+policy `review_tier_edges` (S ≥40, A ≥30, B ≥20). These rounded bands distinguish the pinned
+Bug Hunt distribution's strongest max-effort results (~40–49), high-effort results (~30–35),
+and moderate results (~20–29); they are operator-overridable routing bands, not validated
+review success thresholds. Tiering uses the lower endpoint `value−stderr` as above.
+Without a review measurement, retain the previous task index (coding then overall for
+`review.code`; overall then coding for `review.spec`) and previous coding/overall index tiers.
+The explanation carries `review_quality_from_index` and names `quality_index` explicitly.
+Fallback indices and Bug Hunt percentages are different scales; the mandated fallback can
+outscore measured rows numerically and is not evidence of stronger review performance.
+
+For review quality objectives (hard, critical, delicate and fan-out), means differing by
+**less than** the larger SE tie for best quality; exact equality also ties. Ties use catalog
+cost then canonical configuration key, including critical/delicate objectives. Only two
+review measurements use this noise comparison; index fallbacks tie only on exact equality.
+Noise ties are non-transitive: anchor each band at the highest remaining mean, admit rows
+that tie with that anchor, sort that band by cost/key, and repeat without chaining bands.
+Headroom and soft standing preferences cannot reverse this quality/cost/key order; hard
+standing rules still apply. Cheapest/standard objectives retain point-mean Pareto dominance
+and their existing cost/headroom rules. Selector version `recommend-v3` identifies this
+behavior; older decision records retain their version and are not silently replayed as v3.
+
+The reproducible local CSV importer is documented in [tools/review-import](../tools/review-import/README.md).
+Bug Hunt is a judge-graded TypeScript defect-finding/fixing proxy, not a measured code-review
+finding rate. Its list cost and wall time are reported separately; catalog cost remains the
+existing resource proxy. Unmeasured configurations receive no review value.
 
 **The frontier.** For each task class, the catalog yields the Pareto frontier of
 (quality ↑, cost ↓). A row is dominated when another row is at least as good on both axes and better on one.

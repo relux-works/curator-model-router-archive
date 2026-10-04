@@ -3,6 +3,7 @@ package recommend
 import (
 	"cmp"
 	"encoding/json"
+	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -218,7 +219,14 @@ func selectCandidates(in Request) (Recommendation, error) {
 	}
 	for _, row := range in.Catalog.Rows {
 		catalogued[row.Key()] = true
-		x := CandidateExplanation{RankedCandidate: RankedCandidate{Candidate: row.Candidate, Family: row.Family, Billing: row.Billing, Tier: TierFor(tierQuality(row), in.Policy), Quality: taskQuality(row, in.Task.TaskClass), Cost: row.Cost, ReasonCodes: []string{}}, Admitted: admitted[row.Key()]}
+		q := taskQuality(row, in.Task.TaskClass)
+		tierPolicy, tierQ := in.Policy, tierQuality(row)
+		index := qualityIndex(row, in.Task.TaskClass)
+		if index == "review" {
+			tierPolicy.TierEdges = in.Policy.ReviewTierEdges
+			tierQ = q
+		}
+		x := CandidateExplanation{RankedCandidate: RankedCandidate{Candidate: row.Candidate, Family: row.Family, Billing: row.Billing, Tier: TierFor(tierQ, tierPolicy), Quality: q, QualityIndex: index, Cost: row.Cost, ReasonCodes: []string{}}, Admitted: admitted[row.Key()]}
 		if !x.Admitted {
 			reason(&x, "not_admitted")
 		}
@@ -240,6 +248,10 @@ func selectCandidates(in Request) (Recommendation, error) {
 			reason(&x, "quality_unknown")
 		}
 		x.Qualified = len(x.ReasonCodes) == 0
+		// Informational provenance must not turn a fallback into a hard filter.
+		if strings.HasPrefix(in.Task.TaskClass, "review.") && index != "review" {
+			reason(&x, "review_quality_from_index")
+		}
 		r.Explanation = append(r.Explanation, x)
 	}
 	for _, c := range in.Candidates {
@@ -337,6 +349,9 @@ func selectCandidates(in Request) (Recommendation, error) {
 		}
 		return strings.Compare(a.Candidate.Key(), b.Candidate.Key())
 	})
+	if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") {
+		pool = orderReviewQuality(pool, &r)
+	}
 	if objective == "standard" && r.Explanation[pool[0]].Tier == TierB {
 		base := r.Explanation[pool[0]]
 		for pos, i := range pool {
@@ -364,6 +379,10 @@ func selectCandidates(in Request) (Recommendation, error) {
 			for _, j := range group {
 				y := r.Explanation[j]
 				fits = fits && x.Tier == y.Tier && interchangeable(x.Cost, y.Cost, in.Policy.InterchangeableCostBP) && (!qualityObjective || qualityCompare(x.Quality, y.Quality) == 0)
+				// Review quality ties have a prescribed cost/configuration order.
+				if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") {
+					fits = false
+				}
 			}
 			if fits {
 				groups[g] = append(groups[g], i)
@@ -385,6 +404,11 @@ func selectCandidates(in Request) (Recommendation, error) {
 	}
 	pool = ordered
 	applyPreferences(in, &r, pool)
+	if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") {
+		// Hard standing rules already filtered admission. Soft preferences cannot
+		// reverse the review objective's quality bands and cost/key tie breakers.
+		pool = orderReviewQuality(pool, &r)
+	}
 	chosen := map[int]bool{}
 	if in.Task.Pipeline == "fanout" {
 		families := map[string]bool{}
@@ -434,6 +458,9 @@ func tierQuality(r CatalogRow) *QualityValue {
 	return r.Quality.Overall
 }
 func taskQuality(r CatalogRow, class string) *QualityValue {
+	if strings.HasPrefix(class, "review.") && r.Quality.Review != nil {
+		return r.Quality.Review
+	}
 	// Coding-like classes rank by the coding index: code.*, code review, and
 	// agentic terminal work (tool-use, ops), as catalog/NOTES.md documents.
 	if strings.HasPrefix(class, "code.") || class == "review.code" || class == "tool-use" || class == "ops" {
@@ -443,6 +470,65 @@ func taskQuality(r CatalogRow, class string) *QualityValue {
 		return r.Quality.Overall
 	}
 	return r.Quality.Coding
+}
+func qualityIndex(r CatalogRow, class string) string {
+	q := taskQuality(r, class)
+	switch {
+	case q == nil:
+		return "unknown"
+	case q == r.Quality.Review:
+		return "review"
+	case q == r.Quality.Coding:
+		return "coding"
+	default:
+		return "overall"
+	}
+}
+
+// Noise ties are not transitive. Build bands against the highest remaining
+// mean, then sort each band by cost and canonical configuration key. Never
+// feed a non-transitive pairwise noise comparison to a sorting algorithm.
+func orderReviewQuality(pool []int, r *Recommendation) []int {
+	remaining := slices.Clone(pool)
+	slices.SortFunc(remaining, func(i, j int) int {
+		if c := qualityCompare(r.Explanation[i].Quality, r.Explanation[j].Quality); c != 0 {
+			return c
+		}
+		return strings.Compare(r.Explanation[i].Candidate.Key(), r.Explanation[j].Candidate.Key())
+	})
+	ordered := make([]int, 0, len(pool))
+	for len(remaining) > 0 {
+		anchor := remaining[0]
+		band, rest := []int{anchor}, []int{}
+		for _, i := range remaining[1:] {
+			if reviewNoiseTie(r.Explanation[anchor].RankedCandidate, r.Explanation[i].RankedCandidate) {
+				band = append(band, i)
+			} else {
+				rest = append(rest, i)
+			}
+		}
+		slices.SortFunc(band, func(i, j int) int {
+			a, b := r.Explanation[i], r.Explanation[j]
+			if c := costCompare(a.Cost, b.Cost); c != 0 {
+				return c
+			}
+			return strings.Compare(a.Candidate.Key(), b.Candidate.Key())
+		})
+		if len(band) > 1 {
+			for _, i := range band {
+				reason(&r.Explanation[i], "review_quality_noise_tie")
+			}
+		}
+		ordered = append(ordered, band...)
+		remaining = rest
+	}
+	return ordered
+}
+func reviewNoiseTie(a, b RankedCandidate) bool {
+	if a.QualityIndex != "review" || b.QualityIndex != "review" {
+		return qualityCompare(a.Quality, b.Quality) == 0
+	}
+	return a.Quality.Value == b.Quality.Value || math.Abs(a.Quality.Value-b.Quality.Value) < max(*a.Quality.Stderr, *b.Quality.Stderr)
 }
 func billingRank(b routing.BillingClass) int {
 	switch b {

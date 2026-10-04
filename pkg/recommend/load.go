@@ -18,7 +18,7 @@ import (
 func DefaultPolicy() Policy {
 	h := routing.DefaultPolicy("v1").Headroom
 	h.Enabled = true
-	return Policy{SchemaVersion: PolicyVersion, Mode: routing.ModeSelect, TierEdges: TierEdges{62, 56, 45},
+	return Policy{SchemaVersion: PolicyVersion, Mode: routing.ModeSelect, TierEdges: TierEdges{62, 56, 45}, ReviewTierEdges: TierEdges{40, 30, 20},
 		Difficulties: map[string]DifficultyRule{
 			"trivial": {TierC, "cheapest"}, "routine": {TierB, "cheapest"},
 			"standard": {TierB, "standard"}, "hard": {TierA, "quality"},
@@ -196,13 +196,16 @@ func (c Catalog) Validate() error {
 		if r.Latency != "" && r.Latency != "fast" && r.Latency != "medium" && r.Latency != "slow" {
 			return refuse(InvalidCatalog, "unknown latency")
 		}
-		for _, q := range []*QualityValue{r.Quality.Overall, r.Quality.Coding} {
+		for _, q := range []*QualityValue{r.Quality.Overall, r.Quality.Coding, r.Quality.Review} {
 			if q == nil {
 				continue
 			}
-			if !finite(q.Value) || q.Value < 0 || q.Value > 100 || !provenance(q.Kind, q.Source, q.AsOf) || (q.Stderr != nil && (!finite(*q.Stderr) || *q.Stderr < 0)) {
+			if !finite(q.Value) || q.Value < 0 || q.Value > 100 || !provenance(q.Kind, q.Source, q.AsOf) || (q.Stderr != nil && (!finite(*q.Stderr) || *q.Stderr < 0)) || (q.N != nil && *q.N < 1) {
 				return refuse(InvalidCatalog, "invalid quality or provenance")
 			}
+		}
+		if q := r.Quality.Review; q != nil && (q.Kind != "measured" || q.Stderr == nil || q.N == nil) {
+			return refuse(InvalidCatalog, "review requires measured quality, stderr and n")
 		}
 		cost := r.Cost
 		if !provenance(cost.Kind, cost.Source, cost.AsOf) || (cost.USDPerTask != nil && (!finite(*cost.USDPerTask) || *cost.USDPerTask < 0)) || (cost.TokensPerTask != nil && *cost.TokensPerTask < 0) {
@@ -226,9 +229,10 @@ func (p Policy) Validate() error {
 	if p.Mode != routing.ModeSelect && p.Mode != routing.ModeRecommend && p.Mode != routing.ModeShadow {
 		return refuse(InvalidPolicy, "mode must be select, recommend or shadow")
 	}
-	e := p.TierEdges
-	if !finite(e.S) || !finite(e.A) || !finite(e.B) || e.S > 100 || e.B < 0 || e.S <= e.A || e.A <= e.B {
-		return refuse(InvalidPolicy, "tier edges must satisfy 0 <= B < A < S <= 100")
+	for _, e := range []TierEdges{p.TierEdges, p.ReviewTierEdges} {
+		if !finite(e.S) || !finite(e.A) || !finite(e.B) || e.S > 100 || e.B < 0 || e.S <= e.A || e.A <= e.B {
+			return refuse(InvalidPolicy, "tier edges must satisfy 0 <= B < A < S <= 100")
+		}
 	}
 	if len(p.Difficulties) != 5 {
 		return refuse(InvalidPolicy, "all five difficulty rules are required")

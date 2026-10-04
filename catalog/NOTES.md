@@ -1,8 +1,8 @@
-# Capability catalog notes — 2026-10-04
+# Capability catalog notes — 2026-10-05
 
-46 canonical configurations: 20 Codex, 16 Claude, 8 agy, 1 Muse and 1 local Qwen. The JSON follows the strict `catalog-v1` shape in `pkg/recommend/types.go` and `pkg/recommend/load.go`: extra metadata belongs here. It is a research catalog, not an admission grant or a claim that a binary, account entitlement, local engine or fallback setting was tested. No inference, credential access, private harness-home reads, or harness execution was performed. Only the two requested deliverables were written.
+46 canonical configurations: 20 Codex, 16 Claude, 8 agy, 1 Muse and 1 local Qwen. The JSON follows the strict `catalog-v1` shape in `pkg/recommend/types.go` and `pkg/recommend/load.go`: extra metadata belongs here. It is a research catalog, not an admission grant or a claim that a binary, account entitlement, local engine or fallback setting was tested. No inference, credential access, private harness-home reads, or harness execution was performed. The review evidence refresh adds optional measured review values without changing the catalog-v1 schema.
 
-**Decision consequence:** the shipped default edges (S ≥62, A ≥56, B ≥45) produce S=5, A=7, B=12, C=21, U=1. Critical/S-only selection has five catalog configurations to consider, subject to admission, locks, constraints, and policy rules. Only OpenAI and Anthropic reach A or S, so the default up-to-three-family A-or-better fan-out returns at most two families. Scores and uncertainty allowances are unchanged.
+**General-index decision consequence:** the shipped default edges (S ≥62, A ≥56, B ≥45) produce S=5, A=7, B=12, C=21, U=1. Critical/S-only selection has five catalog configurations to consider, subject to admission, locks, constraints, and policy rules. Only OpenAI and Anthropic reach A or S, so the default up-to-three-family A-or-better fan-out returns at most two families. General-index scores and uncertainty allowances are unchanged. Review selection uses the separate measurements and edges below.
 
 **Vocabulary and scope.** [RegistryFacts](https://github.com/relux-works/skill-agents-management/blob/v0.5.40/pkg/vendorplugin/benchdata/bench.go) is the authority, together with [OpenAI](https://github.com/relux-works/skill-agents-management/blob/v0.5.40/pkg/vendorplugin/benchdata/openai.go), [Anthropic](https://github.com/relux-works/skill-agents-management/blob/v0.5.40/pkg/vendorplugin/benchdata/anthropic.go), [Google](https://github.com/relux-works/skill-agents-management/blob/v0.5.40/pkg/vendorplugin/benchdata/google.go), and [Muse](https://github.com/relux-works/skill-agents-management/blob/v0.5.40/pkg/vendorplugin/benchdata/muse.go). Read from the Go module cache, not reconstructed from public marketing names. RegistryFacts sorts each axis and changes EffortNone to explicit `none`; the underlying declarations identify each supported harness.
 
@@ -41,7 +41,7 @@ AA does not supply an applicable standard error in the inspected index records; 
 
 G1 estimates missing Gemini overall efforts from the same model’s measured high: subtract 3 points per step to medium/low; stderr 7/9. AA’s own starred 3.5-medium estimate (34) is not promoted to a measurement and is not the anchor. G2 and M1 preserve point values while widening uncertainty for harness/identity transfers. H1 preserves the non-reasoning Haiku model observation as an estimate because an absent effort control does not establish thinking mode. Missing entire coding anchors (Haiku and Gemini 3.5–3.7) remain absent; inventing a cross-model conversion from Bug Hunt or SWE-bench would mix scales.
 
-Tier is computed from coding, otherwise overall, using the lower end of `[value−stderr,value+stderr]` when stderr exists; without it use the point value and flag unknown uncertainty. This matches the inspected v1 loader’s `TierFor` (one SE, not a 95% interval). No stored tier can become stale in the JSON. Repair/implementation observations do not establish Go-review, Swift, docs, planning or orchestration accuracy.
+General-index tier is computed from coding, otherwise overall, using the lower end of `[value−stderr,value+stderr]` when stderr exists; without it use the point value and flag unknown uncertainty. This matches the inspected v1 loader’s `TierFor` (one SE, not a 95% interval). No stored tier can become stale in the JSON. Repair/implementation observations do not establish Go-review, Swift, docs, planning or orchestration accuracy.
 
 **Prices and task cost.** All remote rows are subscription-funded by instruction; no metered row or API-key path is assumed. `usd_per_task` is an estimated list-equivalent resource proxy, not a bill, quota debit or marginal subscription price. The subscription fee and remaining headroom are unknown. Actual subscription incremental cash cost alone would make remote costs tie and collapse the frontier to highest quality; the tables below deliberately use the declared list proxy.
 
@@ -118,7 +118,7 @@ For each row, `USD = ((I−C)×Pinput + C×Pcache + O×Poutput)/1e6`, where I in
 | `local-qwen/qwen-3.8-27b-mlx-8bit/none` | unknown | unknown | unknown | 0 | Local API charge only; latency unknown |
 | `muse/muse-spark-1.3-contributor/max` | 16445971 | 16090656 | 263474 | 3.977507 | AA coding mean at max × 1; exact effort budget |
 
-**Computed tiers and quality.** M=measured public result; E=estimate; ± is one stated uncertainty allowance. Unknown SE is not a confidence guarantee.
+**Computed general-index tiers and quality.** M=measured public result; E=estimate; ± is one stated uncertainty allowance. Unknown SE is not a confidence guarantee.
 
 | Configuration | Overall | Coding | Tier |
 |---|---:|---:|:---:|
@@ -169,7 +169,7 @@ For each row, `USD = ((I−C)×Pinput + C×Pcache + O×Poutput)/1e6`, where I in
 | `local-qwen/qwen-3.8-27b-mlx-8bit/none` | — | — | U |
 | `muse/muse-spark-1.3-contributor/max` | 48.000 E ±5 | 54.303 E ±6 | B |
 
-**Pareto frontier by task class.** Higher quality and lower list-equivalent USD/task; dominance requires at least as good on both, strictly better on one. No rounding before comparisons beyond stored six-decimal values; equal points both survive. Use coding for code.*, review.code, tool-use and ops, falling back to overall; use overall for the remaining classes, falling back to coding. This task-to-index map is an explicit v1 proxy assumption, not measured per-class performance. Admission, tier floors, platform filters and headroom must be applied by the consumer; these are unrestricted catalog frontiers. Every eligible row here is subscription-funded. Local/U is excluded because missing quality is incomparable, not zero. The conservative column repeats dominance using value−stderr; absent SE still cannot establish robustness.
+**Pareto frontier by task class.** Higher quality and lower list-equivalent USD/task; dominance requires at least as good on both, strictly better on one. No rounding before comparisons beyond stored six-decimal values; equal points both survive. Use review for review.*, with coding/overall index fallback as described below; use coding for code.*, tool-use and ops, falling back to overall; use overall for the remaining classes, falling back to coding. This task-to-index map is an explicit v1 proxy assumption, not measured per-class performance. Admission, tier floors, platform filters and headroom must be applied by the consumer; these are unrestricted catalog frontiers. Every eligible row here is subscription-funded. Local/U is excluded because missing quality is incomparable, not zero. The conservative column repeats dominance using value−stderr; absent SE still cannot establish robustness.
 
 | Task class | Index | Point frontier | Conservative frontier |
 |---|---|---|---|
@@ -177,8 +177,8 @@ For each row, `USD = ((I−C)×Pinput + C×Pcache + O×Poutput)/1e6`, where I in
 | code.fix | coding | `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/max`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
 | code.refactor | coding | `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/max`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
 | code.test | coding | `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/max`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
-| review.code | coding | `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/max`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
-| review.spec | overall | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
+| review.code | review (index fallback) | `claude/claude-haiku-4-5/none`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `claude/claude-sonnet-5-5/medium`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `claude/claude-sonnet-5-5/medium`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
+| review.spec | review (index fallback) | `claude/claude-haiku-4-5/none`; `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `claude/claude-sonnet-5-5/medium`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-sonnet-5-5/low`; `claude/claude-sonnet-5-5/max`; `claude/claude-sonnet-5-5/medium`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
 | docs.write | overall | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
 | research | overall | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
 | planning | overall | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` | `claude/claude-opus-5-5/high`; `claude/claude-opus-5-5/max`; `claude/claude-opus-5-5/xhigh`; `codex/gpt-6-astra/max`; `codex/gpt-6-luna/high`; `codex/gpt-6-luna/low`; `codex/gpt-6-luna/max`; `codex/gpt-6-luna/medium`; `codex/gpt-6-luna/xhigh`; `codex/gpt-6.1-sol/high`; `codex/gpt-6.1-sol/low`; `codex/gpt-6.1-sol/max`; `codex/gpt-6.1-sol/medium`; `codex/gpt-6.1-sol/xhigh` |
@@ -266,56 +266,80 @@ Frontier coordinates (same row may appear on both):
 - `codex/gpt-6.1-sol/xhigh`: Overall: AA model index at exact effort; API/reference-scaffold evidence, not a production-task success rate. Coding: AA exact model/effort in the named harness; raw row ed8c1d0b0a2fe4560bbfa0a9f47e8941.
 - `muse/muse-spark-1.3-contributor/max`: M1: copy public Muse Spark 1.3 max observations; contributor-to-public execution binding remains unverified, so both are estimates (stderr 5 overall, 6 coding).
 
-**Bug Hunt receipts.** [Pinned runs.csv](https://raw.githubusercontent.com/phuryn/bug-hunt-bench/1217192a6d04e89da3f6106ca3a304d2734882eb/results/runs.csv) at commit `1217192a6d04e89da3f6106ca3a304d2734882eb`, fetched 2026-10-04; live rows only, grouped by exact model, harness and effort. `mean/105×100` is a separate 0–100 bug-fix percentage. For n≥2, sample SE = sample SD/√n; for n=1 it is unknown. A separate pooled SE = 3.285553/√n uses all repeated live groups (81 residual degrees of freedom); it assumes homogeneous variance and is not a measured single-row SE. Both are in raw bugs; multiply by 100/105 for percentage SE. Repeated runs reuse the same two repositories/105 bugs, so these errors describe run variability, not new-repository generalization or 105 independent cases.
+**Measured review proxy — evidence refresh.** [Pinned runs.csv](https://raw.githubusercontent.com/phuryn/bug-hunt-bench/1217192a6d04e89da3f6106ca3a304d2734882eb/results/runs.csv), fetched 2026-10-05, commit `1217192a6d04e89da3f6106ca3a304d2734882eb`. The local importer in [tools/review-import](../tools/review-import/README.md) verifies CSV SHA-256 `995ee322bab1019790fb58cc6c25af968e688f2952d8e28380e975f222407a74`. It maps 37 exact catalog configurations, leaving 9 without a review value. Review values use `kind=measured`, the pinned repo@commit source, latest contributing live-run date as `as_of`, `stderr` and `n`.
 
-| Public configuration | Runs: scores (out of 105) | Mean | Percent | Sample SE | Pooled SE | Run ids | Last run date |
-|---|---|---:|---:|---:|---:|---|---|
-| Fable 5.1; Claude Code; high | 1: 33 | 33.000000 | 31.428571 | unknown | 3.285553 | fable51 | 2026-09-01 |
-| Fable 5.1; Claude Code; low | 1: 29 | 29.000000 | 27.619048 | unknown | 3.285553 | fable51low | 2026-09-02 |
-| Fable 5.1; Claude Code; max | 1: 43 | 43.000000 | 40.952381 | unknown | 3.285553 | fable51max | 2026-09-01 |
-| Fable 5.1; Claude Code; medium | 1: 21 | 21.000000 | 20.000000 | unknown | 3.285553 | fable51medium | 2026-09-10 |
-| Fable 5.1; Claude Code; xhigh | 1: 29 | 29.000000 | 27.619048 | unknown | 3.285553 | fable51xhigh | 2026-09-10 |
-| GPT-6 Astra; Codex CLI; high | 1: 35 | 35.000000 | 33.333333 | unknown | 3.285553 | gpt6astrahigh | 2026-09-04 |
-| GPT-6 Astra; Codex CLI; low | 1: 27 | 27.000000 | 25.714286 | unknown | 3.285553 | gpt6astralow | 2026-09-05 |
-| GPT-6 Astra; Codex CLI; max | 3: 48, 40, 47 | 45.000000 | 42.857143 | 2.516611 | 1.896915 | gpt6astramax, gpt6astramaxr2, gpt6astramaxr3 | 2026-09-14 |
-| GPT-6 Astra; Codex CLI; medium | 1: 34 | 34.000000 | 32.380952 | unknown | 3.285553 | gpt6astramedium | 2026-09-05 |
-| GPT-6 Astra; Codex CLI; xhigh | 1: 43 | 43.000000 | 40.952381 | unknown | 3.285553 | gpt6astraxhigh | 2026-09-04 |
-| GPT-6 Luna; Codex CLI; high | 1: 9 | 9.000000 | 8.571429 | unknown | 3.285553 | gpt6lunahigh | 2026-09-23 |
-| GPT-6 Luna; Codex CLI; low | 1: 4 | 4.000000 | 3.809524 | unknown | 3.285553 | gpt6lunalow | 2026-09-23 |
-| GPT-6 Luna; Codex CLI; max | 3: 17, 21, 17 | 18.333333 | 17.460317 | 1.333333 | 1.896915 | gpt6lunamax, gpt6lunamaxr2, gpt6lunamaxr3 | 2026-09-23 |
-| GPT-6 Luna; Codex CLI; medium | 1: 4 | 4.000000 | 3.809524 | unknown | 3.285553 | gpt6lunamedium | 2026-09-23 |
-| GPT-6 Luna; Codex CLI; xhigh | 1: 14 | 14.000000 | 13.333333 | unknown | 3.285553 | gpt6lunaxhigh | 2026-09-23 |
-| GPT-6 Sol; Codex CLI; high | 1: 20 | 20.000000 | 19.047619 | unknown | 3.285553 | gpt6solhigh | 2026-09-23 |
-| GPT-6 Sol; Codex CLI; low | 1: 6 | 6.000000 | 5.714286 | unknown | 3.285553 | gpt6sollow | 2026-09-23 |
-| GPT-6 Sol; Codex CLI; max | 3: 32, 30, 26 | 29.333333 | 27.936508 | 1.763834 | 1.896915 | gpt6solmax, gpt6solmaxr2, gpt6solmaxr3 | 2026-09-23 |
-| GPT-6 Sol; Codex CLI; medium | 1: 14 | 14.000000 | 13.333333 | unknown | 3.285553 | gpt6solmedium | 2026-09-23 |
-| GPT-6 Sol; Codex CLI; xhigh | 1: 25 | 25.000000 | 23.809524 | unknown | 3.285553 | gpt6solxhigh | 2026-09-23 |
-| GPT-6.1 Sol; Codex CLI; high | 2: 38, 35 | 36.500000 | 34.761905 | 1.500000 | 2.323237 | gpt61solhigh, gpt61solhighr2 | 2026-09-30 |
-| GPT-6.1 Sol; Codex CLI; low | 2: 31, 14 | 22.500000 | 21.428571 | 8.500000 | 2.323237 | gpt61sollow, gpt61sollowr2 | 2026-10-01 |
-| GPT-6.1 Sol; Codex CLI; max | 3: 44, 42, 47 | 44.333333 | 42.222222 | 1.452966 | 1.896915 | gpt61solmax, gpt61solmaxr2, gpt61solmaxr3 | 2026-09-30 |
-| GPT-6.1 Sol; Codex CLI; medium | 2: 28, 30 | 29.000000 | 27.619048 | 1.000000 | 2.323237 | gpt61solmedium, gpt61solmediumr2 | 2026-09-30 |
-| GPT-6.1 Sol; Codex CLI; xhigh | 3: 41, 43, 44 | 42.666667 | 40.634921 | 0.881917 | 1.896915 | gpt61solxhigh, gpt61solxhighr2, gpt61solxhighr3 | 2026-09-30 |
-| Gemini 3.7 Flash; Antigravity CLI; high | 1: 16 | 16.000000 | 15.238095 | unknown | 3.285553 | gemini37flashseq | 2026-08-28 |
-| Gemini 3.7 Flash; Gemini CLI (retired) + model-pinning gateway; high | 1: 22 | 22.000000 | 20.952381 | unknown | 3.285553 | gemini37flash | 2026-08-24 |
-| Gemini 3.8 Flash; Antigravity CLI; high | 3: 20, 19, 15 | 18.000000 | 17.142857 | 1.527525 | 1.896915 | gemini38flash_agy, gemini38flash_agyr2, gemini38flash_agyr3 | 2026-09-15 |
-| Muse Spark 1.3; Muse Code / Meta API; high | 3: 19, 17, 20 | 18.666667 | 17.777778 | 0.881917 | 1.896915 | musespark13high, musespark13highr2, musespark13highr3 | 2026-09-14 |
-| Muse Spark 1.3; Muse Code / Meta API; low | 3: 12, 13, 4 | 9.666667 | 9.206349 | 2.848001 | 1.896915 | musespark13low, musespark13lowr2, musespark13lowr3 | 2026-09-14 |
-| Muse Spark 1.3; Muse Code / Meta API; max | 5: 33, 33, 35, 29, 31 | 32.200000 | 30.666667 | 1.019804 | 1.469344 | musespark13max, musespark13maxr2, musespark13maxr3, musespark13maxr4, musespark13maxr5 | 2026-09-17 |
-| Muse Spark 1.3; Muse Code / Meta API; medium | 3: 9, 15, 15 | 13.000000 | 12.380952 | 2.000000 | 1.896915 | musespark13medium, musespark13mediumr2, musespark13mediumr3 | 2026-09-14 |
-| Muse Spark 1.3; Muse Code / Meta API; xhigh | 3: 20, 25, 16 | 20.333333 | 19.365079 | 2.603417 | 1.896915 | musespark13xhigh, musespark13xhighr2, musespark13xhighr3 | 2026-09-14 |
-| Opus 5.5; Claude Code; high | 3: 32, 32, 31 | 31.666667 | 30.158730 | 0.333333 | 1.896915 | opus55high, opus55highr2, opus55highr3 | 2026-09-23 |
-| Opus 5.5; Claude Code; low | 3: 23, 25, 19 | 22.333333 | 21.269841 | 1.763834 | 1.896915 | opus55low, opus55lowr2, opus55lowr3 | 2026-09-23 |
-| Opus 5.5; Claude Code; max | 3: 43, 39, 43 | 41.666667 | 39.682540 | 1.333333 | 1.896915 | opus55max, opus55maxr2, opus55maxr3 | 2026-09-23 |
-| Opus 5.5; Claude Code; medium | 3: 30, 30, 31 | 30.333333 | 28.888889 | 0.333333 | 1.896915 | opus55medium, opus55mediumr2, opus55mediumr3 | 2026-09-23 |
-| Opus 5.5; Claude Code; xhigh | 3: 35, 37, 36 | 36.000000 | 34.285714 | 0.577350 | 1.896915 | opus55xhigh, opus55xhighr2, opus55xhighr3 | 2026-09-23 |
-| Qwen3.8-27B 8-bit; Claude Code / OpenRouter; default | 3: 8, 12, 12 | 10.666667 | 10.158730 | 1.333333 | 1.896915 | qwen3827b8bitnc, qwen3827b8bitncr2, qwen3827b8bitncr3 | 2026-09-16 |
-| Sonnet 5.5; Claude Code; high | 3: 32, 34, 37 | 34.333333 | 32.698413 | 1.452966 | 1.896915 | sonnet55high, sonnet55highr2, sonnet55highr3 | 2026-09-29 |
-| Sonnet 5.5; Claude Code; low | 3: 20, 17, 20 | 19.000000 | 18.095238 | 1.000000 | 1.896915 | sonnet55low, sonnet55lowr2, sonnet55lowr3 | 2026-09-30 |
-| Sonnet 5.5; Claude Code; max | 3: 57, 54, 43 | 51.333333 | 48.888889 | 4.255715 | 1.896915 | sonnet55max, sonnet55maxr2, sonnet55maxr3 | 2026-09-29 |
-| Sonnet 5.5; Claude Code; medium | 3: 18, 28, 24 | 23.333333 | 22.222222 | 2.905933 | 1.896915 | sonnet55medium, sonnet55mediumr2, sonnet55mediumr3 | 2026-09-30 |
-| Sonnet 5.5; Claude Code; xhigh | 3: 39, 34, 35 | 36.000000 | 34.285714 | 1.527525 | 1.896915 | sonnet55xhigh, sonnet55xhighr2, sonnet55xhighr3 | 2026-09-29 |
+`mean = fixed_of_105 / 105 × 100`. For n≥2, SE is each group's sample SD/√n. Singletons borrow the pooled within-configuration SD across all repeated live groups: 3.285552612 fixed points, 81 residual degrees of freedom, then normalize by 100/105. This assumes homogeneous variance. The table's ± is one SE, not the research report's pooled 95% half-width. Repeated runs reuse the same two TypeScript repositories and 105 bugs; their variation does not establish generalization to new repositories or independent-case uncertainty. Bug Hunt measures judge-graded finding and fixing of planted bugs: it is a review proxy, not Go-review, spec-review or adjudicated finding accuracy. Judge identity/family effects require further evidence. The Muse contributor runtime has no review value because its execution binding to the public Meta API harness is unverified.
 
-Do not pool the two Gemini 3.7 harnesses: the agy/Antigravity CLI score is 16, while 22 belongs to a retired Gemini CLI plus pinning gateway. Hosted Qwen 8-bit uses Claude Code/OpenRouter, not the Pi/MLX local engine. Bug Hunt is judged bug finding and fixing in two TypeScript repositories; counts are not deterministic unit-test pass rates. Superseded best runs are not added to live means.
+| Configuration | Mean /100 | n | ± SE /100 | Wall minutes | List-equiv. cost USD |
+|---|---:|---:|---:|---:|---:|
+| `agy/gemini-3.7-flash-high/none` | 15.238 | 1 | 3.129 | 22.70 | $6.36 |
+| `agy/gemini-3.8-flash-high/none` | 17.143 | 3 | 1.455 | 38.73 | $11.02 |
+| `codex/gpt-6-luna/low` | 3.810 | 1 | 3.129 | 19.30 | $0.20 |
+| `codex/gpt-6-luna/max` | 17.460 | 3 | 1.270 | 99.17 | $0.53 |
+| `codex/gpt-6-luna/high` | 8.571 | 1 | 3.129 | 24.40 | $0.13 |
+| `codex/gpt-6-luna/xhigh` | 13.333 | 1 | 3.129 | 57.00 | $0.39 |
+| `codex/gpt-6-luna/medium` | 3.810 | 1 | 3.129 | 8.60 | $0.06 |
+| `codex/gpt-6-astra/low` | 25.714 | 1 | 3.129 | 32.10 | $11.69 |
+| `codex/gpt-6-astra/max` | 42.857 | 3 | 2.397 | 89.80 | $33.03 |
+| `codex/gpt-6-astra/high` | 33.333 | 1 | 3.129 | 40.50 | $20.60 |
+| `codex/gpt-6-astra/xhigh` | 40.952 | 1 | 3.129 | 58.80 | $24.22 |
+| `codex/gpt-6-astra/medium` | 32.381 | 1 | 3.129 | 28.00 | $15.78 |
+| `codex/gpt-6.1-sol/low` | 21.429 | 2 | 8.095 | 25.30 | $1.33 |
+| `codex/gpt-6.1-sol/max` | 42.222 | 3 | 1.384 | 139.33 | $5.88 |
+| `codex/gpt-6.1-sol/high` | 34.762 | 2 | 1.429 | 70.30 | $3.26 |
+| `codex/gpt-6.1-sol/xhigh` | 40.635 | 3 | 0.840 | 98.73 | $4.35 |
+| `codex/gpt-6.1-sol/medium` | 27.619 | 2 | 0.952 | 29.80 | $1.76 |
+| `codex/gpt-6-sol/low` | 5.714 | 1 | 3.129 | 11.10 | $1.08 |
+| `codex/gpt-6-sol/max` | 27.937 | 3 | 1.680 | 63.40 | $9.34 |
+| `codex/gpt-6-sol/high` | 19.048 | 1 | 3.129 | 33.90 | $4.16 |
+| `codex/gpt-6-sol/xhigh` | 23.810 | 1 | 3.129 | 51.40 | $7.67 |
+| `codex/gpt-6-sol/medium` | 13.333 | 1 | 3.129 | 24.50 | $2.39 |
+| `claude/claude-opus-5-5/low` | 21.270 | 3 | 1.680 | 11.53 | $8.34 |
+| `claude/claude-opus-5-5/max` | 39.683 | 3 | 1.270 | 66.90 | $58.52 |
+| `claude/claude-opus-5-5/high` | 30.159 | 3 | 0.317 | 23.97 | $22.24 |
+| `claude/claude-opus-5-5/xhigh` | 34.286 | 3 | 0.550 | 42.57 | $34.98 |
+| `claude/claude-opus-5-5/medium` | 28.889 | 3 | 0.317 | 17.03 | $15.69 |
+| `claude/claude-fable-5-1/low` | 27.619 | 1 | 3.129 | 33.20 | $33.00 |
+| `claude/claude-fable-5-1/max` | 40.952 | 1 | 3.129 | 73.10 | $87.18 |
+| `claude/claude-fable-5-1/high` | 31.429 | 1 | 3.129 | 36.30 | $48.58 |
+| `claude/claude-fable-5-1/xhigh` | 27.619 | 1 | 3.129 | 59.50 | $53.61 |
+| `claude/claude-fable-5-1/medium` | 20.000 | 1 | 3.129 | 23.00 | $23.73 |
+| `claude/claude-sonnet-5-5/low` | 18.095 | 3 | 0.952 | 8.50 | $5.73 |
+| `claude/claude-sonnet-5-5/max` | 48.889 | 3 | 4.053 | 287.17 | $154.04 |
+| `claude/claude-sonnet-5-5/high` | 32.698 | 3 | 1.384 | 27.97 | $19.85 |
+| `claude/claude-sonnet-5-5/xhigh` | 34.286 | 3 | 1.455 | 72.70 | $42.86 |
+| `claude/claude-sonnet-5-5/medium` | 22.222 | 3 | 2.768 | 17.40 | $11.12 |
+
+The separate `mean_wall_minutes` and published list-equivalent cost describe Bug Hunt's workload. Selection still uses `cost.usd_per_task`, the existing AA workload/resource proxy, rather than substituting Bug Hunt cost into other task classes. These are neither marginal subscription bills nor quota units.
+
+**Review tier edges and noise.** Defaults are S ≥40, A ≥30, B ≥20 in `review_tier_edges`, overridable independently of `tier_edges`. These rounded bands separate the measured top max-effort cohort (~40–49), high-effort cohort (~30–35), moderate cohort (~20–29) and lower scores. The 37 means have quartiles 18.10, 27.62 and 34.29 (inclusive linear interpolation). They are routing policy choices derived from this distribution, not calibrated project review thresholds. Apply the existing `value−stderr` conservative tier rule. Without a review measurement, retain previous index ranking/tiering; `review_quality_from_index` and `quality_index=coding|overall|unknown` make that fallback explicit. General and review percentages are different scales: fallback can numerically outrank a measured result without establishing better review quality.
+
+Review quality objectives (hard, critical, delicate, fan-out) treat two measured means differing by less than the larger SE as a tie; exact equal means tie too. Cost then canonical configuration key break ties, even for critical/delicate. Because this relation is non-transitive, each band anchors at the highest remaining mean and admits only candidates tied with that anchor; it never chains bands. Headroom and soft preferences cannot reverse this objective order. Hard standing rules still filter candidates. Cheapest/standard objectives keep their existing point-mean Pareto/cost behavior. Selector `recommend-v3` binds these semantics; legacy catalogs still load, while older selector decision records are explicitly refused for replay.
+
+**Reviewer decision consequences.** The picks below use `cmr recommend`, all 46 catalog configurations explicitly admitted, built-in defaults, no usage facts, no locks or producer family, and reviewer role with `review.code`. The mini column loads `docs/standing-rules.toml` and matches its public `<your-mini-host>` placeholder, activating the Astra/medium pin; unknown quota never triggers the stop. These examples do not assert live admission or quota availability.
+
+| Difficulty | Without mini standing rules | With mini standing rules |
+|---|---|---|
+| trivial | `codex/gpt-6-luna/low` (C) | `codex/gpt-6-astra/medium` (B) |
+| routine | `codex/gpt-6.1-sol/medium` (B) | `codex/gpt-6-astra/medium` (B) |
+| standard | `codex/gpt-6.1-sol/high` (A) | `codex/gpt-6-astra/medium` (B) |
+| hard | `claude/claude-sonnet-5-5/max` (S) | `no_qualified_candidate` |
+| critical | `claude/claude-sonnet-5-5/max` (S) | `no_qualified_candidate` |
+
+
+The mini's measured Astra/medium lower endpoint is 29.252, placing it in B: the pin permits trivial/routine/standard but refuses hard (A) and critical (S). No operator rule is inferred away. The standard unpinned pick upgrades the B-tier Sol/medium candidate to A-tier Sol/high because $0.805527 ≤1.5×$0.640624 using catalog cost. The best unpinned quality pick is Sonnet/max (48.889 ±4.053); its gap to Astra/max (42.857) exceeds the larger SE. Luna/max's 17.460 measurement now puts it in review C. Muse/max falls back to its estimated coding index 54.302733 ±6, lower endpoint 48.302733, retaining index tier B under `tier_edges`; its explanation reports `quality_index=coding` and `review_quality_from_index`. It remains below the hard A and critical S floors, so the five difficulty picks above are unchanged. Its coding index is an estimate with an unverified contributor binding, not a measured review result. Gemini 3.7's retired CLI score never maps to Antigravity; hosted Qwen never maps to the local engine.
+
+All 65 unsupported harness/model/effort groups are listed with run IDs and explicit reason codes in the import report. Every `Muse Code / Meta API` group (low, medium, high, xhigh and max; 17 live runs) is unmapped with `harness_binding_unverified`: the public benchmark does not establish that it exercised the catalog's contributor runtime. Registry model/effort vocabulary alone does not establish that binding. Haiku, local Qwen and Gemini 3.5/3.6 configurations also have no live exact mapped review rows, so no review value is added.
+
+The following raw observations remain attributable only to the public `Muse Code / Meta API` harness with model `Muse Spark 1.3`. They are retained separately from the catalog configuration measurements above; all five groups contribute to pooled variance.
+
+| Effort | Raw fixed /105 scores | Live run IDs | Unmapped reason |
+|---|---|---|---|
+| low | 12, 13, 4 | `musespark13low`, `musespark13lowr2`, `musespark13lowr3` | `harness_binding_unverified` |
+| medium | 9, 15, 15 | `musespark13medium`, `musespark13mediumr2`, `musespark13mediumr3` | `harness_binding_unverified` |
+| high | 19, 17, 20 | `musespark13high`, `musespark13highr2`, `musespark13highr3` | `harness_binding_unverified` |
+| xhigh | 20, 25, 16 | `musespark13xhigh`, `musespark13xhighr2`, `musespark13xhighr3` | `harness_binding_unverified` |
+| max | 33, 33, 35, 29, 31 | `musespark13max`, `musespark13maxr2`, `musespark13maxr3`, `musespark13maxr4`, `musespark13maxr5` | `harness_binding_unverified` |
 
 **SWE-bench and vendor reports.** Inspected the [official SWE-bench board](https://www.swebench.com/) and [Haiku release methodology](https://www.anthropic.com/news/claude-haiku-4-5). Vendor observation: Haiku 4.5 SWE-bench Verified 73.3/100 (`kind=vendor`, source=the Haiku URL, as_of=2026-10-04, published=2025-10-15, stderr unknown). It uses 500 problems, 50 trials, a 128K thinking budget and a bash/edit scaffold; it does not establish this catalog’s no-effort-control Claude Code row and is excluded from primary coding and tiers. No exact supported-effort SWE-bench Verified result was established for the newer GPT-6/Claude-5.5/Muse/agy configurations.
 

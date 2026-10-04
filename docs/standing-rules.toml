@@ -9,6 +9,12 @@ s = 62
 a = 56
 b = 45
 
+# Review measurements use their own scale; index fallbacks retain tier_edges.
+[review_tier_edges]
+s = 40
+a = 30
+b = 20
+
 [[rules]]
 id = "mini-codex-first"
 source = "tb-R164"

@@ -54,6 +54,10 @@ fanout_k = 3
 s = 62
 a = 56
 b = 45
+[review_tier_edges]
+s = 40
+a = 30
+b = 20
 [difficulties.trivial]
 minimum_tier = "C"
 objective = "cheapest"
@@ -86,6 +90,18 @@ keeper rulings, and then make it yours before relying on it:
 Use `--host` to override policy `host`; otherwise the short hostname is used. Pass `--story`,
 `--producer-family`, and repeatable `--exclude runtime/model` to activate their rule facets.
 These rules filter already admitted candidates and never bypass a difficulty floor or caller lock.
+
+`review.code` and `review.spec` use optional measured `quality.review` and
+`review_tier_edges`. A missing measurement falls back to the previous index and
+index tiers, with `review_quality_from_index` and an explicit `quality_index`.
+For review quality objectives, differences below the larger SE tie and cost then
+configuration order break the tie, even for critical tasks. Bands are anchored
+to the highest remaining mean to avoid non-transitive noise comparisons.
+Hard rules apply before ranking; headroom and soft preferences cannot reverse
+this quality-objective order. See [catalog notes](../catalog/NOTES.md) for the
+measured table and difficulty picks, and [the local importer](../tools/review-import/README.md)
+for reproducible refresh instructions. The measurement is a TypeScript Bug Hunt
+proxy; catalog cost keeps its separate resource-proxy provenance.
 
 ## Modes and output
 

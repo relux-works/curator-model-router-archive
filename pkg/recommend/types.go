@@ -14,7 +14,7 @@ const (
 	CatalogVersion       = "catalog-v1"
 	PolicyVersion        = "recommend-policy-v1"
 	DecisionVersion      = "recommend-decision-v1"
-	SelectorVersion      = "recommend-v2"
+	SelectorVersion      = "recommend-v3"
 	NoQualifiedCandidate = "no_qualified_candidate"
 	InvalidCatalog       = "invalid_catalog"
 	InvalidPolicy        = "invalid_policy"
@@ -49,10 +49,12 @@ type QualityValue struct {
 	Source string   `json:"source" toml:"source"`
 	AsOf   string   `json:"as_of" toml:"as_of"`
 	Stderr *float64 `json:"stderr,omitempty" toml:"stderr"`
+	N      *int     `json:"n,omitempty" toml:"n"`
 }
 type Quality struct {
 	Overall *QualityValue `json:"overall,omitempty" toml:"overall"`
 	Coding  *QualityValue `json:"coding,omitempty" toml:"coding"`
+	Review  *QualityValue `json:"review,omitempty" toml:"review"`
 }
 type Cost struct {
 	USDPerTask    *float64 `json:"usd_per_task,omitempty" toml:"usd_per_task"`
@@ -109,6 +111,7 @@ type Policy struct {
 	Mode                  routing.Mode              `json:"mode" toml:"mode"`
 	AllowMetered          bool                      `json:"allow_metered" toml:"allow_metered"`
 	TierEdges             TierEdges                 `json:"tier_edges" toml:"tier_edges"`
+	ReviewTierEdges       TierEdges                 `json:"review_tier_edges" toml:"review_tier_edges"`
 	Difficulties          map[string]DifficultyRule `json:"difficulties" toml:"difficulties"`
 	StandardAMaxCostRatio float64                   `json:"standard_a_max_cost_ratio" toml:"standard_a_max_cost_ratio"`
 	InterchangeableCostBP int64                     `json:"interchangeable_cost_bp" toml:"interchangeable_cost_bp"`
@@ -169,15 +172,16 @@ type Request struct {
 	AdmissionSource string `json:"admission_source" toml:"admission_source"`
 }
 type RankedCandidate struct {
-	Candidate   Candidate                     `json:"candidate" toml:"candidate"`
-	Family      string                        `json:"family" toml:"family"`
-	Billing     routing.BillingClass          `json:"billing" toml:"billing"`
-	Tier        Tier                          `json:"tier" toml:"tier"`
-	Quality     *QualityValue                 `json:"quality,omitempty" toml:"quality"`
-	Cost        Cost                          `json:"cost" toml:"cost"`
-	Frontier    bool                          `json:"frontier" toml:"frontier"`
-	Headroom    *routing.CandidateExplanation `json:"headroom,omitempty" toml:"headroom"`
-	ReasonCodes []string                      `json:"reason_codes" toml:"reason_codes"`
+	Candidate    Candidate                     `json:"candidate" toml:"candidate"`
+	Family       string                        `json:"family" toml:"family"`
+	Billing      routing.BillingClass          `json:"billing" toml:"billing"`
+	Tier         Tier                          `json:"tier" toml:"tier"`
+	Quality      *QualityValue                 `json:"quality,omitempty" toml:"quality"`
+	QualityIndex string                        `json:"quality_index,omitempty" toml:"quality_index"`
+	Cost         Cost                          `json:"cost" toml:"cost"`
+	Frontier     bool                          `json:"frontier" toml:"frontier"`
+	Headroom     *routing.CandidateExplanation `json:"headroom,omitempty" toml:"headroom"`
+	ReasonCodes  []string                      `json:"reason_codes" toml:"reason_codes"`
 }
 type CandidateExplanation struct {
 	RankedCandidate
@@ -238,7 +242,7 @@ func (r Recommendation) RenderHuman() string {
 		} else if x.Cost.TokensPerTask != nil {
 			cost = fmt.Sprintf("%d tokens/task", *x.Cost.TokensPerTask)
 		}
-		fmt.Fprintf(&b, "%s/%s/%s tier=%s quality=%s cost=%s admitted=%t qualified=%t selected=%t frontier=%t reasons=%v\n", x.Candidate.Runtime, x.Candidate.Model, x.Candidate.Effort, x.Tier, q, cost, x.Admitted, x.Qualified, x.Selected, x.Frontier, x.ReasonCodes)
+		fmt.Fprintf(&b, "%s/%s/%s tier=%s quality=%s index=%s cost=%s admitted=%t qualified=%t selected=%t frontier=%t reasons=%v\n", x.Candidate.Runtime, x.Candidate.Model, x.Candidate.Effort, x.Tier, q, x.QualityIndex, cost, x.Admitted, x.Qualified, x.Selected, x.Frontier, x.ReasonCodes)
 		if x.Headroom != nil {
 			h := x.Headroom
 			fmt.Fprintf(&b, "  headroom=%v slack=%v band=%d over=%t reserve=%t inflight=%d\n", value(h.Headroom), value(h.Slack), h.Band, h.Over, h.Reserve, h.Inflight)

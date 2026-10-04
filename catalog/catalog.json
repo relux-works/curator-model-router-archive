@@ -180,6 +180,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/models/releases/gemini-3-7-flash",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 15.238095238095237,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-08-28",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -210,6 +218,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 6
+        },
+        "review": {
+          "value": 17.142857142857142,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-15",
+          "stderr": 1.454785934906616,
+          "n": 3
         }
       },
       "cost": {
@@ -240,6 +256,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 9
+        },
+        "review": {
+          "value": 31.428571428571427,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-01",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -270,6 +294,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 13
+        },
+        "review": {
+          "value": 27.61904761904762,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-02",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -299,6 +331,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 40.95238095238095,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-01",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -329,6 +369,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 11
+        },
+        "review": {
+          "value": 20,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-10",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -359,6 +407,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 7
+        },
+        "review": {
+          "value": 27.61904761904762,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-10",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -413,6 +469,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 9
+        },
+        "review": {
+          "value": 30.15873015873016,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 0.3174603174603175,
+          "n": 3
         }
       },
       "cost": {
@@ -443,6 +507,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 13
+        },
+        "review": {
+          "value": 21.269841269841265,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 1.6798421022632324,
+          "n": 3
         }
       },
       "cost": {
@@ -472,6 +544,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 39.68253968253968,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 1.2698412698412698,
+          "n": 3
         }
       },
       "cost": {
@@ -502,6 +582,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 11
+        },
+        "review": {
+          "value": 28.888888888888886,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 0.3174603174603175,
+          "n": 3
         }
       },
       "cost": {
@@ -532,6 +620,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 7
+        },
+        "review": {
+          "value": 34.285714285714285,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 0.5498573992282151,
+          "n": 3
         }
       },
       "cost": {
@@ -561,6 +657,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 32.6984126984127,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-29",
+          "stderr": 1.3837774423938645,
+          "n": 3
         }
       },
       "cost": {
@@ -590,6 +694,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 18.095238095238095,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 0.9523809523809523,
+          "n": 3
         }
       },
       "cost": {
@@ -619,6 +731,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 48.88888888888889,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-29",
+          "stderr": 4.053062011048795,
+          "n": 3
         }
       },
       "cost": {
@@ -648,6 +768,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 22.222222222222218,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 2.767554884787729,
+          "n": 3
         }
       },
       "cost": {
@@ -677,6 +805,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 34.285714285714285,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-29",
+          "stderr": 1.454785934906616,
+          "n": 3
         }
       },
       "cost": {
@@ -707,6 +843,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 9
+        },
+        "review": {
+          "value": 33.333333333333336,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-04",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -737,6 +881,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 13
+        },
+        "review": {
+          "value": 25.714285714285715,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-05",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -766,6 +918,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 42.857142857142854,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-14",
+          "stderr": 2.396772836593889,
+          "n": 3
         }
       },
       "cost": {
@@ -796,6 +956,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 11
+        },
+        "review": {
+          "value": 32.38095238095238,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-05",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -826,6 +994,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 7
+        },
+        "review": {
+          "value": 40.95238095238095,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-04",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -856,6 +1032,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 9
+        },
+        "review": {
+          "value": 8.571428571428571,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -886,6 +1070,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 13
+        },
+        "review": {
+          "value": 3.8095238095238093,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -915,6 +1107,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 17.46031746031746,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 1.26984126984127,
+          "n": 3
         }
       },
       "cost": {
@@ -945,6 +1145,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 11
+        },
+        "review": {
+          "value": 3.8095238095238093,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -975,6 +1183,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 7
+        },
+        "review": {
+          "value": 13.333333333333334,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -1005,6 +1221,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 9
+        },
+        "review": {
+          "value": 19.047619047619047,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -1035,6 +1259,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 13
+        },
+        "review": {
+          "value": 5.714285714285714,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -1064,6 +1296,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 27.936507936507933,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 1.6798421022632324,
+          "n": 3
         }
       },
       "cost": {
@@ -1094,6 +1334,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 11
+        },
+        "review": {
+          "value": 13.333333333333334,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -1124,6 +1372,14 @@
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04",
           "stderr": 7
+        },
+        "review": {
+          "value": 23.80952380952381,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-23",
+          "stderr": 3.1290977258386636,
+          "n": 1
         }
       },
       "cost": {
@@ -1153,6 +1409,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 34.76190476190476,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 1.4285714285714284,
+          "n": 2
         }
       },
       "cost": {
@@ -1182,6 +1446,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 21.428571428571427,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-10-01",
+          "stderr": 8.095238095238093,
+          "n": 2
         }
       },
       "cost": {
@@ -1211,6 +1483,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 42.22222222222223,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 1.3837774423938645,
+          "n": 3
         }
       },
       "cost": {
@@ -1240,6 +1520,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 27.61904761904762,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 0.9523809523809523,
+          "n": 2
         }
       },
       "cost": {
@@ -1269,6 +1557,14 @@
           "kind": "measured",
           "source": "https://artificialanalysis.ai/agents/coding-agents",
           "as_of": "2026-10-04"
+        },
+        "review": {
+          "value": 40.63492063492063,
+          "kind": "measured",
+          "source": "https://github.com/phuryn/bug-hunt-bench@1217192a6d04e89da3f6106ca3a304d2734882eb",
+          "as_of": "2026-09-30",
+          "stderr": 0.8399210511316161,
+          "n": 3
         }
       },
       "cost": {
