@@ -2,6 +2,7 @@ package recommend
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -11,6 +12,84 @@ import (
 
 func reviewValue(v, se float64, n int) *QualityValue {
 	return &QualityValue{Value: v, Kind: "measured", Source: "synthetic-review-fixture@v1", AsOf: "2026-10-01", Stderr: ptr(se), N: ptr(n)}
+}
+
+func TestReviewMeasurementRanksAboveIndexFallback(t *testing.T) {
+	for _, class := range []string{"review.code", "review.spec"} {
+		for _, mode := range []string{"balanced", "burn"} {
+			for _, pipeline := range []string{"single", "fanout"} {
+				for _, fallbackMean := range []float64{50, 99} {
+					t.Run(fmt.Sprintf("%s/%s/%s/%g", class, mode, pipeline, fallbackMean), func(t *testing.T) {
+						in := fixture(t)
+						restrict(&in, "alpha", "super", "delta")
+						in.Task = TaskProfile{Role: "reviewer", TaskClass: class, Difficulty: "hard", Pipeline: pipeline}
+						in.Policy.BudgetMode = mode
+						for i := range in.Catalog.Rows {
+							r := &in.Catalog.Rows[i]
+							r.Family = r.Model
+							switch r.Model {
+							case "alpha":
+								r.Quality.Review = reviewValue(50, 1, 3)
+								r.Cost.USDPerTask = ptr(2.0)
+							case "super", "delta":
+								r.Quality.Coding.Value = fallbackMean
+								if r.Model == "delta" {
+									r.Quality.Coding.Value--
+								}
+								q := *r.Quality.Coding
+								r.Quality.Overall = &q
+								r.Cost.USDPerTask = ptr(1.0)
+							}
+						}
+						// Keep fallback rows floor-qualified even in the equal-mean case.
+						in.Policy.TierEdges = TierEdges{90, 45, 20}
+						quota(&in, "super", 0, 9000, 0, "fresh")
+						quota(&in, "alpha", 3000, 300, 0, "fresh")
+						got := run(t, in)
+						selected(t, got, "alpha")
+						if len(got.Alternatives) != 2 || got.Alternatives[0].Candidate.Model != "super" {
+							t.Fatal("fallback rows must retain index order", got.Alternatives)
+						}
+						wantTier := TierA
+						if fallbackMean == 99 {
+							wantTier = TierS
+						}
+						if !explanation(t, got, "alpha").Frontier || explanation(t, got, "super").Tier != wantTier {
+							t.Fatal("fallback dominated a measurement or changed tiering")
+						}
+						if pipeline == "fanout" && (len(got.FanOut) != 3 || got.FanOut[0].Model != "alpha") {
+							t.Fatal("fanout quality order", got.FanOut)
+						}
+						in.Policy.Rules = []Rule{{ID: "prefer-fallback", Source: "operator", When: RuleWhen{Difficulty: []string{"hard"}}, Prefer: &RulePreference{Runtimes: []string{"rt-s", "rt-a"}}}}
+						selected(t, run(t, in), "alpha")
+						in.Candidates = slices.DeleteFunc(in.Candidates, func(c Candidate) bool { return c.Model == "alpha" })
+						selected(t, run(t, in), "super")
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestReviewMeasurementDominatesHigherIndexAtEqualCost(t *testing.T) {
+	for _, class := range []string{"review.code", "review.spec"} {
+		in := fixture(t)
+		restrict(&in, "alpha", "super")
+		in.Task = TaskProfile{Role: "reviewer", TaskClass: class, Difficulty: "hard"}
+		for i := range in.Catalog.Rows {
+			r := &in.Catalog.Rows[i]
+			if r.Model == "alpha" {
+				r.Quality.Review = reviewValue(50, 1, 3)
+			}
+			if r.Model == "alpha" || r.Model == "super" {
+				r.Cost.USDPerTask = ptr(1.0)
+			}
+		}
+		got := run(t, in)
+		if !explanation(t, got, "alpha").Frontier || explanation(t, got, "super").Frontier {
+			t.Fatal("higher fallback index must be dominated by equal-cost review measurement", got.RenderHuman())
+		}
+	}
 }
 func TestReviewQualityOverridesIndices(t *testing.T) {
 	for _, class := range []string{"review.code", "review.spec"} {
@@ -196,15 +275,14 @@ func TestReviewEdgesAndValidation(t *testing.T) {
 	}
 }
 
-// These golden picks exercise the shipped measured catalog with the actual
-// standing-rule template, explicit admission, no quota facts and no host IO.
+// These legacy golden picks retain the original unscoped mini pin. Scoped
+// v1.1 rules are tested separately in budget_test.go.
 func TestShippedReviewGoldenPicks(t *testing.T) {
 	c, err := LoadCatalog(DefaultCatalog())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// TOML decoding belongs to the CLI; mirror the two mini rules without importing
-	// that IO layer into the pure library. The CLI test checks the actual template.
+	// Retain the legacy pin to verify the golden bytes without changing history.
 	var results []struct {
 		Difficulty string     `json:"difficulty"`
 		Mini       bool       `json:"mini"`

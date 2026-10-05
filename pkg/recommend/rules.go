@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/relux-works/curator-model-router/pkg/routing"
 )
@@ -25,12 +26,14 @@ type Rule struct {
 	Exclude             bool                 `json:"exclude,omitempty" toml:"exclude"`
 }
 type RuleWhen struct {
-	Host      string `json:"host,omitempty" toml:"host"`
-	Role      string `json:"role,omitempty" toml:"role"`
-	TaskClass string `json:"task_class,omitempty" toml:"task_class"`
-	Runtime   string `json:"runtime,omitempty" toml:"runtime"`
-	Model     string `json:"model,omitempty" toml:"model"`
-	Story     string `json:"story,omitempty" toml:"story"`
+	Difficulty  []string `json:"difficulty,omitempty" toml:"difficulty"`
+	Sensitivity []string `json:"sensitivity,omitempty" toml:"sensitivity"`
+	Host        string   `json:"host,omitempty" toml:"host"`
+	Role        string   `json:"role,omitempty" toml:"role"`
+	TaskClass   string   `json:"task_class,omitempty" toml:"task_class"`
+	Runtime     string   `json:"runtime,omitempty" toml:"runtime"`
+	Model       string   `json:"model,omitempty" toml:"model"`
+	Story       string   `json:"story,omitempty" toml:"story"`
 }
 
 // RuleSelector fields are conjunctive; omitted fields are unrestricted.
@@ -63,6 +66,12 @@ type AppliedRule struct {
 	Rationale string `json:"rationale,omitempty"`
 }
 
+type SkippedRule struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Facet  string `json:"facet"`
+}
+
 func validateRules(rules []Rule) error {
 	seen := map[string]bool{}
 	for _, r := range rules {
@@ -71,6 +80,24 @@ func validateRules(rules []Rule) error {
 			return bad("unique id and source are required")
 		}
 		seen[r.ID] = true
+		for _, scope := range []struct {
+			name            string
+			values, allowed []string
+		}{
+			{"difficulty", r.When.Difficulty, []string{"trivial", "routine", "standard", "hard", "critical"}},
+			{"sensitivity", r.When.Sensitivity, []string{"normal", "delicate"}},
+		} {
+			if scope.values != nil && len(scope.values) == 0 {
+				return bad("empty " + scope.name + " scope")
+			}
+			seenValues := map[string]bool{}
+			for _, v := range scope.values {
+				if !slices.Contains(scope.allowed, v) || seenValues[v] {
+					return bad("invalid or duplicate " + scope.name)
+				}
+				seenValues[v] = true
+			}
+		}
 		if r.Require == nil && r.Forbid == nil && r.Prefer == nil && r.Effort == nil && r.QuotaStopBP == nil && r.CrossProviderReview == nil && !r.Exclude {
 			return bad("an action is required")
 		}
@@ -120,8 +147,29 @@ func validateRules(rules []Rule) error {
 func effortRank(e string) int {
 	return slices.Index([]string{"none", "low", "medium", "high", "xhigh", "max", "ultra"}, e)
 }
+func (w RuleWhen) contextMismatch(in Request) string {
+	if w.Host != "" && w.Host != in.Host {
+		return "host"
+	}
+	if w.Role != "" && w.Role != in.Task.Role {
+		return "role"
+	}
+	if w.TaskClass != "" && w.TaskClass != in.Task.TaskClass {
+		return "task_class"
+	}
+	if w.Story != "" && w.Story != in.Story {
+		return "story"
+	}
+	if len(w.Difficulty) > 0 && !slices.Contains(w.Difficulty, in.Task.Difficulty) {
+		return "difficulty"
+	}
+	if len(w.Sensitivity) > 0 && !slices.Contains(w.Sensitivity, in.Task.Sensitivity) {
+		return "sensitivity"
+	}
+	return ""
+}
 func (w RuleWhen) contextMatches(in Request) bool {
-	return (w.Host == "" || w.Host == in.Host) && (w.Role == "" || w.Role == in.Task.Role) && (w.TaskClass == "" || w.TaskClass == in.Task.TaskClass) && (w.Story == "" || w.Story == in.Story)
+	return w.contextMismatch(in) == ""
 }
 func (w RuleWhen) candidateMatches(c Candidate) bool {
 	return (w.Runtime == "" || w.Runtime == c.Runtime) && (w.Model == "" || w.Model == c.Model)
@@ -181,7 +229,11 @@ func applyRules(in Request, out *Recommendation, floor Tier) bool {
 		rules = append(rules, Rule{ID: id, Source: "--exclude", Rationale: "Rotate away from caller-excluded runtime/model pairs.", Exclude: true})
 	}
 	for _, r := range rules {
-		if !r.When.contextMatches(in) {
+		if facet := r.When.contextMismatch(in); facet != "" {
+			// Legacy unscoped rules keep their exact explanation bytes.
+			if len(r.When.Difficulty)+len(r.When.Sensitivity) > 0 {
+				out.SkippedRules = append(out.SkippedRules, SkippedRule{r.ID, r.Source, facet})
+			}
 			continue
 		}
 		matched := false
@@ -293,7 +345,8 @@ func applyPreferences(in Request, out *Recommendation, pool []int) {
 	for _, r := range out.AppliedRules {
 		active[r.ID] = true
 	}
-	for _, tier := range []Tier{TierS, TierA, TierB, TierC} {
+	tiers := []Tier{TierS, TierA, TierB, TierC}
+	for _, tier := range tiers {
 		positions, indices := []int{}, []int{}
 		for pos, i := range pool {
 			if out.Explanation[i].Tier == tier {
@@ -302,29 +355,7 @@ func applyPreferences(in Request, out *Recommendation, pool []int) {
 			}
 		}
 		slices.SortStableFunc(indices, func(i, j int) int {
-			a, b := out.Explanation[i], out.Explanation[j]
-			for _, r := range in.Policy.Rules {
-				if r.Prefer == nil || !active[r.ID] {
-					continue
-				}
-				rank := func(x CandidateExplanation, list []string, v string) int {
-					if !r.When.candidateMatches(x.Candidate) {
-						return len(list)
-					}
-					n := slices.Index(list, v)
-					if n < 0 {
-						return len(list)
-					}
-					return n
-				}
-				if c := cmp.Compare(rank(a, r.Prefer.Runtimes, a.Candidate.Runtime), rank(b, r.Prefer.Runtimes, b.Candidate.Runtime)); c != 0 {
-					return c
-				}
-				if c := cmp.Compare(rank(a, r.Prefer.Families, a.Family), rank(b, r.Prefer.Families, b.Family)); c != 0 {
-					return c
-				}
-			}
-			return 0
+			return preferenceCompare(in, active, out.Explanation[i], out.Explanation[j], false)
 		})
 		for pos, i := range indices {
 			pool[positions[pos]] = i
@@ -337,4 +368,53 @@ func applyPreferences(in Request, out *Recommendation, pool []int) {
 			}
 		}
 	}
+}
+
+// Review quality ties consider only preferences with their own matching scope.
+// Ordinary within-tier preferences retain their existing ordered-list semantics.
+func preferenceCompare(in Request, active map[string]bool, a, b CandidateExplanation, scopedOnly bool) int {
+	for _, r := range in.Policy.Rules {
+		if r.Prefer == nil || !active[r.ID] || scopedOnly && len(r.When.Difficulty)+len(r.When.Sensitivity) == 0 {
+			continue
+		}
+		rank := func(x CandidateExplanation, list []string, v string) int {
+			if !r.When.candidateMatches(x.Candidate) {
+				return len(list)
+			}
+			n := slices.Index(list, v)
+			if n < 0 {
+				return len(list)
+			}
+			return n
+		}
+		if c := cmp.Compare(rank(a, r.Prefer.Runtimes, a.Candidate.Runtime), rank(b, r.Prefer.Runtimes, b.Candidate.Runtime)); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(rank(a, r.Prefer.Families, a.Family), rank(b, r.Prefer.Families, b.Family)); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+func orderPreferredReview(in Request, out *Recommendation, pool []int) []int {
+	active := map[string]bool{}
+	for _, r := range out.AppliedRules {
+		active[r.ID] = true
+	}
+	// Anchor bands on quality before consulting any preference. A matched
+	// scoped preference can break ties, never promote a weaker quality band.
+	return orderReviewQualityBy(pool, out, func(i, j int) int {
+		a, b := out.Explanation[i], out.Explanation[j]
+		if c := preferenceCompare(in, active, a, b, true); c != 0 {
+			return c
+		}
+		if in.Policy.EffectiveBudgetMode() == "burn" {
+			return burnTieCompare(a, b)
+		}
+		if c := costCompare(a.Cost, b.Cost); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Candidate.Key(), b.Candidate.Key())
+	})
 }

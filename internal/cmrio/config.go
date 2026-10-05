@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/unstable"
 	"github.com/relux-works/curator-model-router/pkg/recommend"
+	"github.com/relux-works/curator-model-router/pkg/routing"
 )
 
 func StateRoot() string {
@@ -55,21 +57,80 @@ func LoadPolicy(path string) (recommend.Policy, error) {
 	}
 	return DecodePolicy(b, strings.EqualFold(filepath.Ext(path), ".json"))
 }
-func DecodePolicy(b []byte, asJSON bool) (recommend.Policy, error) {
+
+// rawPolicyMode reads only the top-level declaration, independently of strict
+// policy decoding and TOML-to-JSON conversion. It is an execution hint only.
+// Stop at the first declaration; later syntax errors cannot erase it. Malformed
+// input before the declaration or a non-string value leaves the mode unknown.
+func rawPolicyMode(b []byte, asJSON bool) routing.Mode {
+	if asJSON {
+		d := json.NewDecoder(bytes.NewReader(b))
+		token, err := d.Token()
+		if err != nil || token != json.Delim('{') {
+			return ""
+		}
+		for d.More() {
+			key, err := d.Token()
+			if err != nil {
+				return ""
+			}
+			var value json.RawMessage
+			if err := d.Decode(&value); err != nil {
+				return ""
+			}
+			if key == "mode" {
+				var mode string
+				if json.Unmarshal(value, &mode) == nil {
+					return routing.Mode(mode)
+				}
+				return ""
+			}
+		}
+		return ""
+	}
+	var parser unstable.Parser
+	parser.Reset(b)
+	for parser.NextExpression() {
+		x := parser.Expression()
+		if x.Kind == unstable.Table || x.Kind == unstable.ArrayTable {
+			// Subsequent keys belong to a table, never to the policy root.
+			return ""
+		}
+		if x.Kind != unstable.KeyValue {
+			continue
+		}
+		key := x.Key()
+		if !key.Next() || string(key.Node().Data) != "mode" || key.Next() {
+			continue
+		}
+		if value := x.Value(); value.Kind == unstable.String {
+			return routing.Mode(value.Data)
+		}
+		return ""
+	}
+	return ""
+}
+
+func DecodePolicy(b []byte, asJSON bool) (p recommend.Policy, err error) {
+	// On every load/parse/conversion/validation failure return only the raw mode
+	// hint. Never expose an invalid partial policy to routing callers.
+	defer func() {
+		if err != nil {
+			p = recommend.Policy{Mode: rawPolicyMode(b, asJSON)}
+		}
+	}()
+	raw := b
 	if !asJSON {
-		// Convert TOML's wire object to JSON to use the library's strict overlay,
-		// including partial difficulty defaults and custom headroom window filters.
 		var wire map[string]any
 		if err := toml.NewDecoder(bytes.NewReader(b)).Decode(&wire); err != nil {
 			return recommend.Policy{}, &recommend.Refusal{Code: recommend.InvalidPolicy, Message: "invalid TOML policy"}
 		}
-		var err error
-		b, err = json.Marshal(wire)
+		raw, err = json.Marshal(wire)
 		if err != nil {
 			return recommend.Policy{}, &recommend.Refusal{Code: recommend.InvalidPolicy, Message: "invalid TOML policy values"}
 		}
 	}
-	return recommend.LoadPolicy(b)
+	return recommend.LoadPolicy(raw)
 }
 func SaveDecision(root string, record recommend.DecisionRecord) error {
 	b, err := record.JSON()

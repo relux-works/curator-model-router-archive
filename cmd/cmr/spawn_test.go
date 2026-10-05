@@ -67,7 +67,7 @@ func TestSpawnModesLocksAndRefusal(t *testing.T) {
 	root := cliEnvironment(t)
 	empty := candidateFile(t, root, true)
 	log := fakeTaskBoard(t, root)
-	for _, mode := range []string{"select", "shadow", "recommend"} {
+	for _, mode := range []string{"select", "recommend"} {
 		var out, stderr bytes.Buffer
 		if code := run([]string{"spawn", "--role", "developer", "--task-class", "code.implement", "--candidates", empty, "--mode", mode, "--json", "--", "TASK"}, &out, &stderr); code != 2 || !strings.Contains(out.String(), "no_qualified_candidate") {
 			t.Fatal(code, out.String())

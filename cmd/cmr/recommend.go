@@ -25,11 +25,12 @@ func (s *repeatedStrings) String() string     { return strings.Join(*s, ",") }
 func (s *repeatedStrings) Set(v string) error { *s = append(*s, v); return nil }
 
 type recommendOptions struct {
-	admission                                                             *recommend.AdmissionContext
-	role, taskClass, difficulty, language, platform, agent, model, effort string
-	catalog, policy, candidates, host, story, producerFamily, mode        string
-	delicate, fanout, refresh, json                                       bool
-	exclude                                                               repeatedStrings
+	admission                                                              *recommend.AdmissionContext
+	loadedPolicy                                                           *recommend.Policy
+	role, taskClass, difficulty, language, platform, agent, model, effort  string
+	catalog, policy, candidates, host, story, producerFamily, mode, budget string
+	delicate, fanout, refresh, json                                        bool
+	exclude                                                                repeatedStrings
 }
 
 func recommendFlagSet(name string, spawn bool, o *recommendOptions) *flag.FlagSet {
@@ -42,7 +43,7 @@ func recommendFlagSet(name string, spawn bool, o *recommendOptions) *flag.FlagSe
 		{"role", &o.role}, {"task-class", &o.taskClass}, {"difficulty", &o.difficulty}, {"language", &o.language},
 		{"agent", &o.agent}, {"model", &o.model}, {"reasoning-effort", &o.effort},
 		{"catalog", &o.catalog}, {"policy", &o.policy}, {"candidates", &o.candidates},
-		{"platform", &o.platform}, {"host", &o.host}, {"story", &o.story}, {"producer-family", &o.producerFamily},
+		{"budget", &o.budget}, {"platform", &o.platform}, {"host", &o.host}, {"story", &o.story}, {"producer-family", &o.producerFamily},
 	} {
 		f.StringVar(x.target, x.name, "", "")
 	}
@@ -62,6 +63,9 @@ func recommendFlags(name string, args []string, spawn bool) (recommendOptions, e
 	f := recommendFlagSet(name, spawn, &o)
 	if err := f.Parse(args); err != nil || f.NArg() != 0 {
 		return o, &Refusal{Code: "cmr_invalid_arguments", Message: "invalid " + name + " flags"}
+	}
+	if o.budget != "" && o.budget != "economy" && o.budget != "balanced" && o.budget != "burn" {
+		return o, &Refusal{Code: "cmr_invalid_arguments", Message: "budget must be economy, balanced or burn"}
 	}
 	return o, nil
 }
@@ -102,9 +106,17 @@ func recommendation(o recommendOptions) (recommend.DecisionRecord, error) {
 	if err != nil {
 		return recommend.DecisionRecord{}, err
 	}
-	policy, err := cmrio.LoadPolicy(o.policy)
-	if err != nil {
-		return recommend.DecisionRecord{}, err
+	var policy recommend.Policy
+	if o.loadedPolicy != nil {
+		policy = *o.loadedPolicy
+	} else {
+		policy, err = cmrio.LoadPolicy(o.policy)
+		if err != nil {
+			return recommend.DecisionRecord{}, err
+		}
+	}
+	if o.budget != "" {
+		policy.BudgetMode = o.budget
 	}
 	if o.host == "" {
 		o.host = policy.Host

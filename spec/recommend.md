@@ -1,4 +1,4 @@
-# Recommend: task-aware model selection, plug-and-play (v1)
+# Recommend: task-aware model selection, plug-and-play (v1.1)
 
 Status: **DECIDED for implementation**, 2026-10-04. Ivan's instruction, in his words: «прими наиболее подходящие
 решения и запустим имплементацию… нужна уже библиотека + её соединения с task-board спавнами… желательно
@@ -54,18 +54,24 @@ review success thresholds. Tiering uses the lower endpoint `value−stderr` as a
 Without a review measurement, retain the previous task index (coding then overall for
 `review.code`; overall then coding for `review.spec`) and previous coding/overall index tiers.
 The explanation carries `review_quality_from_index` and names `quality_index` explicitly.
-Fallback indices and Bug Hunt percentages are different scales; the mandated fallback can
-outscore measured rows numerically and is not evidence of stronger review performance.
+Fallback indices and Bug Hunt percentages are different scales. In review quality
+comparisons, measurements always rank above index fallbacks, including Pareto
+dominance, best-quality objectives, burn and fan-out. Compare fallback indices only
+among themselves; tiering retains the separate scales described above.
 
 For review quality objectives (hard, critical, delicate and fan-out), means differing by
 **less than** the larger SE tie for best quality; exact equality also ties. Ties use catalog
 cost then canonical configuration key, including critical/delicate objectives. Only two
 review measurements use this noise comparison; index fallbacks tie only on exact equality.
+Measurements and fallbacks never share a tie band, even with equal numeric values.
 Noise ties are non-transitive: anchor each band at the highest remaining mean, admit rows
 that tie with that anchor, sort that band by cost/key, and repeat without chaining bands.
-Headroom and soft standing preferences cannot reverse this quality/cost/key order; hard
-standing rules still apply. Cheapest/standard objectives retain point-mean Pareto dominance
-and their existing cost/headroom rules. Selector version `recommend-v3` identifies this
+Balanced headroom and soft standing preferences retain this quality/cost/key order,
+with matching scoped high-stakes reviewer preferences breaking ties inside each
+anchored quality band as described in §3.1. Burn ties
+prefer the subscription with the most known headroom before cost/key. Hard rules still apply.
+Cheapest/standard objectives use provenance-first review quality in Pareto dominance
+and their existing cost/headroom rules. Selector version `recommend-v3` identifies the legacy unscoped balanced
 behavior; older decision records retain their version and are not silently replayed as v3.
 
 The reproducible local CSV importer is documented in [tools/review-import](../tools/review-import/README.md).
@@ -99,6 +105,31 @@ Defaults and inference:
   shared main.
 
 ## 3. Policy (operator file, sensible defaults built in)
+
+Budget policy `budget_mode = "economy" | "balanced" | "burn"` is independent of the
+spawn execution `mode`. `--budget` overrides it for both recommend and spawn. Balanced
+is the default and retains the following table and legacy unscoped-policy decisions exactly.
+The policy and its override are frozen into the decision and content ID. An absent
+`budget_mode` is the legacy wire representation of balanced; recommendation JSON omits
+that default to preserve existing golden bytes. Human explanations always print the mode.
+
+| Budget | Objective at every difficulty | Fan-out |
+| --- | --- | --- |
+| `economy` | Cheapest qualified; standard skips the ≤1.5× A upgrade | Existing distinct-family cap |
+| `balanced` | Existing difficulty table below | `fanout_k`, default 3 |
+| `burn` | Best quality; equal-quality ties prefer the largest known subscription headroom, then cost/key | Every qualified distinct A+ family up to `burn_fanout_cap`, default 4 |
+
+Budget modes keep admission, locks, constraints, billing order, standing hard rules and
+tier floors unchanged, including the existing delicate S-to-A fallback. Economy does
+not let headroom move a more expensive row ahead of the cheapest row. Burn keeps
+quality ahead of headroom, with anchored review noise bands as above. Non-review
+standing preferences retain their existing bias inside each qualified tier. Unknown or stale
+usage is neutral and cannot count as spare quota. The cap is configurable up to 100;
+zero/omitted `burn_fanout_cap` uses four. Automatic per-runtime mode switching is deferred.
+Non-balanced decisions and difficulty/sensitivity-scoped rules use `recommend-v4`;
+legacy unscoped balanced decisions retain `recommend-v3`. Replay recomputes frozen
+inputs and refuses any prior record whose result differs under the measurement-first
+review quality rule.
 
 The policy lives at `~/.curator/routing.toml`. A missing file means the built-in defaults. Every value is
 versioned and digested into the decision.
@@ -139,10 +170,16 @@ The orchestrators already follow model rulings from the coordinating keeper. Unt
 recommender applies them as **hard constraints**, and every recommendation names each ruling it applied. The
 rules live in the policy file as a `rules` list. Each entry has:
 - `id` and `source` (the ruling, for example `tb-R164`);
-- `when`, a match on any of `host`, `role`, `task_class`, `runtime`, `model`, `story`;
+- `when`, exact conjunctive matches on `host`, `role`, `task_class`, `runtime`, `model`, `story`,
+  plus `difficulty` (a list of trivial/routine/standard/hard/critical) and `sensitivity`
+  (a list of normal/delicate). Absent lists match any value; present lists must be
+  nonempty, unique and contain only valid values. Task defaults are resolved first;
+  scoped-rule explanations record `rule_not_applicable: difficulty` or `sensitivity`
+  when the task falls outside the rule's scope;
 - one or more actions:
   - `require` / `forbid` a runtime, a model, a family or an effort;
-  - `prefer` an order of runtimes or families (a soft bias inside the qualified set, never across tiers);
+  - `prefer` an order of runtimes or families (a soft bias within qualified tiers, with the
+    high-stakes review quality-tie behavior below);
   - `effort` (a pin, or a minimum and maximum);
   - `quota_stop_bp`: a subscription whose tightest applicable known window has headroom at or below this many
     basis points is excluded. Unknown usage never triggers the stop;
@@ -155,9 +192,17 @@ Rules are evaluated in file order:
 
 The host is `--host`, or the policy's `host`, or the machine's short hostname.
 
-The repository ships `docs/standing-rules.toml` with the rulings in force on 2026-10-04 (copy it into
+The repository ships `docs/standing-rules.toml` with the rulings in force on 2026-10-05 (copy it into
 `~/.curator/routing.toml`):
-- **tb-R164 (Mac mini):** codex first; reviews on `gpt-6-astra` at `medium`.
+- **tb-R164 (Mac mini):** codex first everywhere; only normal trivial/routine/standard
+  reviews are pinned to `gpt-6-astra` at `medium`. Hard, critical and delicate reviews
+  retain their tier floors and choose the best qualified configuration, preferring
+  Codex among candidates in the same anchored best-quality band. The Codex-first
+  preference explicitly lists all difficulties; only matching preferences with
+  their own difficulty/sensitivity scope get this demanding-review tie behavior.
+  Nonmatching rules have no effect on selection or other rules. Preferences never
+  move a lower-quality band or an index fallback ahead of a better measurement.
+  Economy retains its cheapest-qualified objective and existing within-tier preferences.
 - **tb-R139:** codex weekly window stop when headroom is 25% or less.
 - **tb-R121:** cross-provider review; same-provider only as the last resort, with R164 as the operator
   exception on the mini.
@@ -203,7 +248,7 @@ placement of Lane 2's executor beside the router, so the router works stand-alon
 
 ## 6. Output and the task-board connection (plug-and-play)
 
-`cmr recommend --role R --task-class C [--difficulty D] [--delicate] [--fanout] [--json]` prints:
+`cmr recommend --role R --task-class C [--difficulty D] [--budget economy|balanced|burn] [--delicate] [--fanout] [--json]` prints:
 - the selected configuration;
 - the ranked alternatives, each with its tier, quality, cost, headroom and reason codes;
 - the exact task-board spawn flags (`--agent X --model Y --reasoning-effort Z`);
@@ -219,9 +264,19 @@ The decision record is written to `$XDG_STATE_HOME/curator/model-router/decision
 Modes, set by `--mode` or the policy:
 - `select` (the default for `cmr spawn`, since using it is the opt-in);
 - `recommend`, which prints the flags and does not exec;
-- `shadow`, which execs the original args unchanged and logs the decision.
+- `shadow`, which is fail-open: execute the original spawn args unchanged even when
+  recommendation, admission, preflight, policy, usage or logging fails. Log the
+  would-be decision or error as `cmr:shadow ...` on stderr and return task-board's
+  exit status. Only wrapper parse errors before `--` and a missing task-board
+  binary stop launch. Resolve mode from the explicit flag first, then a minimal
+  independent read of the top-level policy `mode` when full loading fails. A
+  readable shadow declaration survives syntax and conversion errors elsewhere;
+  an unreadable policy supplies no mode and select/recommend refuse. Explicit
+  `--mode shadow` always launches. Shadow preserves the completed child’s exit
+  status even if copying stdout or stderr fails; failure to start still refuses.
 
-On `no_qualified_candidate`, it refuses and never launches anything.
+On `no_qualified_candidate`, select/recommend refuse and never launch anything;
+shadow still forwards the original launch.
 
 A fan-out recommendation prints one spawn line per model, and `cmr spawn --fanout` launches each.
 

@@ -9,11 +9,17 @@ import (
 	"github.com/relux-works/curator-model-router/pkg/recommend"
 )
 
-func TestReviewCLIShippedGoldenPicks(t *testing.T) {
+func TestReviewCLILegacyGoldenPicks(t *testing.T) {
 	root := cliEnvironment(t)
 	file := candidateFile(t, root, false)
 	defaults := root + "/default-policy.json"
 	if err := os.WriteFile(defaults, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Preserve the old golden as a regression of the original unscoped R164
+	// policy. The shipped v1.1 template has separate scope tests.
+	legacy := root + "/legacy-policy.json"
+	if err := os.WriteFile(legacy, []byte(`{"rules":[{"id":"mini-review-astra-medium","source":"tb-R164","when":{"role":"reviewer"},"require":{"runtime":"codex","model":"gpt-6-astra"},"effort":{"pin":"medium"}}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	var scenarios []struct {
@@ -34,7 +40,7 @@ func TestReviewCLIShippedGoldenPicks(t *testing.T) {
 	for _, s := range scenarios {
 		policy := defaults
 		if s.Mini {
-			policy = "../../docs/standing-rules.toml"
+			policy = legacy
 		}
 		args := []string{"recommend", "--role", "reviewer", "--task-class", "review.code", "--difficulty", s.Difficulty, "--candidates", file, "--catalog", "../../catalog/catalog.json", "--policy", policy, "--host", "<your-mini-host>", "--json"}
 		var out, stderr bytes.Buffer

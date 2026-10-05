@@ -226,6 +226,12 @@ func (p Policy) Validate() error {
 	if p.SchemaVersion != PolicyVersion {
 		return refuse(InvalidPolicy, "unknown policy schema_version")
 	}
+	if !slices.Contains([]string{"", "economy", "balanced", "burn"}, p.BudgetMode) {
+		return refuse(InvalidPolicy, "budget_mode must be economy, balanced or burn")
+	}
+	if p.BurnFanOutCap < 0 || p.BurnFanOutCap > 100 {
+		return refuse(InvalidPolicy, "burn_fanout_cap must be 1..100 when set")
+	}
 	if p.Mode != routing.ModeSelect && p.Mode != routing.ModeRecommend && p.Mode != routing.ModeShadow {
 		return refuse(InvalidPolicy, "mode must be select, recommend or shadow")
 	}

@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"github.com/relux-works/curator-model-router/internal/cmrio"
 	"github.com/relux-works/curator-model-router/pkg/recommend"
 )
 
@@ -29,34 +33,31 @@ func runSpawn(args []string, stdout, stderr io.Writer) int {
 		return writeRefusal(&Refusal{Code: "cmr_invalid_arguments", Message: "mode must be select, recommend or shadow"}, o.json, stdout, stderr)
 	}
 	forwarded := args[boundary+1:]
-	parsed, err := parseSpawnArgs(forwarded)
-	if err != nil {
-		return commandError(err, o.json, stdout, stderr)
-	}
-	locks := parsed.locks
-	// Caller flags are locks, including flags after positional spawn arguments.
-	for _, x := range []struct {
-		name   string
-		target *string
-	}{{"agent", &o.agent}, {"model", &o.model}, {"reasoning-effort", &o.effort}, {"role", &o.role}} {
-		if v, ok := locks[x.name]; ok {
-			if *x.target != "" && *x.target != v && !(x.name == "model" && canonicalModel(*x.target) == canonicalModel(v)) {
-				return writeRefusal(&Refusal{Code: "cmr_invalid_arguments", Message: "conflicting --" + x.name}, o.json, stdout, stderr)
-			}
-			*x.target = v
-		}
-	}
-	o.admission = &recommend.AdmissionContext{BoardFlags: parsed.boardFlags}
-	record, err := recommendation(o)
-	if err != nil {
-		return commandError(err, o.json, stdout, stderr)
-	}
+	// Resolve execution mode before any advisory admission, task, or usage work.
+	// Freeze the policy once so recommendation cannot observe a different mode.
+	policy, policyErr := cmrio.LoadPolicy(o.policy)
 	mode := o.mode
 	if mode == "" {
-		mode = string(record.Inputs.Policy.Mode)
+		mode = string(policy.Mode)
+	}
+	if mode == "shadow" {
+		// A write to a closed stdout/stderr pipe would otherwise kill cmr with
+		// SIGPIPE before the caller's launch; shadow must stay fail-open.
+		// Catching (not ignoring) keeps the default disposition for task-board:
+		// caught signals reset to default on exec, ignored ones would not.
+		signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
+		return runShadowSpawn(o, forwarded, policy, policyErr, stdout, stderr)
+	}
+	if policyErr != nil {
+		return commandError(policyErr, o.json, stdout, stderr)
 	}
 	if mode != "select" && mode != "recommend" && mode != "shadow" {
 		return writeRefusal(&Refusal{Code: "cmr_invalid_arguments", Message: "mode must be select, recommend or shadow"}, o.json, stdout, stderr)
+	}
+	o.loadedPolicy = &policy
+	record, parsed, err := spawnRecommendation(o, forwarded)
+	if err != nil {
+		return commandError(err, o.json, stdout, stderr)
 	}
 	if record.Recommendation.Refusal != nil {
 		if err = outputRecommendation(record, o.json, nil, mode, stdout); err != nil {
@@ -78,6 +79,61 @@ func runSpawn(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return writeRefusal(&Refusal{Code: "cmr_task_board_unavailable", Message: "task-board is not on PATH"}, o.json, stdout, stderr)
 	}
+	return executeSpawnCommands(binary, commands, o.json, stdout, stderr)
+}
+
+func spawnRecommendation(o recommendOptions, forwarded []string) (recommend.DecisionRecord, spawnArguments, error) {
+	parsed, err := parseSpawnArgs(forwarded)
+	if err != nil {
+		return recommend.DecisionRecord{}, parsed, err
+	}
+	// Caller flags are locks, including flags after positional spawn arguments.
+	for _, x := range []struct {
+		name   string
+		target *string
+	}{{"agent", &o.agent}, {"model", &o.model}, {"reasoning-effort", &o.effort}, {"role", &o.role}} {
+		if v, ok := parsed.locks[x.name]; ok {
+			if *x.target != "" && *x.target != v && !(x.name == "model" && canonicalModel(*x.target) == canonicalModel(v)) {
+				return recommend.DecisionRecord{}, parsed, &Refusal{Code: "cmr_invalid_arguments", Message: "conflicting --" + x.name}
+			}
+			*x.target = v
+		}
+	}
+	o.admission = &recommend.AdmissionContext{BoardFlags: parsed.boardFlags}
+	record, err := recommendation(o)
+	return record, parsed, err
+}
+
+func runShadowSpawn(o recommendOptions, forwarded []string, policy recommend.Policy, policyErr error, stdout, stderr io.Writer) int {
+	binary, err := exec.LookPath("task-board")
+	if err != nil {
+		return writeRefusal(&Refusal{Code: "cmr_task_board_unavailable", Message: "task-board is not on PATH"}, o.json, stdout, stderr)
+	}
+	var advisory bytes.Buffer
+	if policyErr == nil {
+		o.loadedPolicy = &policy
+		record, _, recErr := spawnRecommendation(o, forwarded)
+		if recErr == nil {
+			// recommendation already persisted the full replayable decision,
+			// including refusals. Also expose the would-be result on stderr.
+			_ = outputRecommendation(record, true, nil, "shadow", &advisory)
+		} else {
+			commandError(recErr, true, &advisory, io.Discard)
+		}
+	} else {
+		commandError(policyErr, true, &advisory, io.Discard)
+	}
+	// Even an unavailable decision log or stderr must not gate shadow launch.
+	_, _ = fmt.Fprintf(stderr, "cmr:shadow %s\n", strings.TrimSpace(advisory.String()))
+	commands := [][]string{append([]string{"task-board", "spawn"}, forwarded...)}
+	return executeSpawnCommandsWithStatus(binary, commands, o.json, stdout, stderr, true)
+}
+
+func executeSpawnCommands(binary string, commands [][]string, asJSON bool, stdout, stderr io.Writer) int {
+	return executeSpawnCommandsWithStatus(binary, commands, asJSON, stdout, stderr, false)
+}
+
+func executeSpawnCommandsWithStatus(binary string, commands [][]string, asJSON bool, stdout, stderr io.Writer, preserveStatus bool) int {
 	// Run sequentially so fan-out has one real spawn gate per configuration and
 	// its status/output reaches the caller. The stored decision precedes launch.
 	for _, command := range commands {
@@ -85,12 +141,17 @@ func runSpawn(args []string, stdout, stderr io.Writer) int {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = stdout
 		cmd.Stderr = stderr
-		if err = cmd.Run(); err != nil {
+		if err := cmd.Run(); err != nil {
+			// Wait can return a relay error after a successful child. In shadow,
+			// completed child status is authoritative; a start failure has no state.
+			if preserveStatus && cmd.ProcessState != nil {
+				return cmd.ProcessState.ExitCode()
+			}
 			var exit *exec.ExitError
 			if errors.As(err, &exit) {
 				return exit.ExitCode()
 			}
-			return writeRefusal(&Refusal{Code: "cmr_spawn_failed", Message: "could not execute task-board"}, o.json, stdout, stderr)
+			return writeRefusal(&Refusal{Code: "cmr_spawn_failed", Message: "could not execute task-board"}, asJSON, stdout, stderr)
 		}
 	}
 	return 0

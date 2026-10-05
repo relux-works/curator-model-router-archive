@@ -11,16 +11,17 @@ import (
 )
 
 const (
-	CatalogVersion       = "catalog-v1"
-	PolicyVersion        = "recommend-policy-v1"
-	DecisionVersion      = "recommend-decision-v1"
-	SelectorVersion      = "recommend-v3"
-	NoQualifiedCandidate = "no_qualified_candidate"
-	InvalidCatalog       = "invalid_catalog"
-	InvalidPolicy        = "invalid_policy"
-	InvalidTask          = "invalid_task"
-	InvalidInput         = "invalid_input"
-	DecisionMismatch     = "decision_mismatch"
+	CatalogVersion        = "catalog-v1"
+	PolicyVersion         = "recommend-policy-v1"
+	DecisionVersion       = "recommend-decision-v1"
+	SelectorVersion       = "recommend-v3"
+	BudgetSelectorVersion = "recommend-v4"
+	NoQualifiedCandidate  = "no_qualified_candidate"
+	InvalidCatalog        = "invalid_catalog"
+	InvalidPolicy         = "invalid_policy"
+	InvalidTask           = "invalid_task"
+	InvalidInput          = "invalid_input"
+	DecisionMismatch      = "decision_mismatch"
 )
 
 // Refusal is both a typed input error and a normal selection abstention.
@@ -103,8 +104,13 @@ type DifficultyRule struct {
 }
 
 // Policy is TOML-free. Construct programmatic policies with DefaultPolicy.
-// Zero numeric/boolean overrides are values, not requests for defaults.
+// Zero numeric/boolean overrides are values, except BurnFanOutCap whose zero
+// is the omitted-field sentinel for the default of four.
 type Policy struct {
+	// Empty BudgetMode is the legacy wire representation of balanced, preserving
+	// existing decision IDs and golden bytes. Use EffectiveBudgetMode to read it.
+	BudgetMode            string                    `json:"budget_mode,omitempty" toml:"budget_mode"`
+	BurnFanOutCap         int                       `json:"burn_fanout_cap,omitempty" toml:"burn_fanout_cap"`
 	Host                  string                    `json:"host,omitempty" toml:"host"`
 	Rules                 []Rule                    `json:"rules,omitempty" toml:"rules"`
 	SchemaVersion         string                    `json:"schema_version" toml:"schema_version"`
@@ -190,6 +196,8 @@ type CandidateExplanation struct {
 	Selected  bool `json:"selected" toml:"selected"`
 }
 type Recommendation struct {
+	BudgetMode   string                 `json:"budget_mode,omitempty" toml:"budget_mode"`
+	SkippedRules []SkippedRule          `json:"skipped_rules,omitempty" toml:"skipped_rules"`
 	AppliedRules []AppliedRule          `json:"applied_rules,omitempty" toml:"applied_rules"`
 	DecisionID   string                 `json:"decision_id,omitempty" toml:"decision_id"`
 	Selected     *Candidate             `json:"selected,omitempty" toml:"selected"`
@@ -227,6 +235,10 @@ func (r Recommendation) RenderHuman() string {
 	fmt.Fprintf(&b, "decision=%s\n", r.DecisionID)
 	if r.Refusal != nil {
 		fmt.Fprintf(&b, "refused: %s\n", r.Refusal)
+	}
+	fmt.Fprintf(&b, "budget=%s\n", effectiveBudgetMode(r.BudgetMode))
+	for _, rule := range r.SkippedRules {
+		fmt.Fprintf(&b, "rule=%s source=%s rule_not_applicable: %s\n", rule.ID, rule.Source, rule.Facet)
 	}
 	for _, rule := range r.AppliedRules {
 		fmt.Fprintf(&b, "rule=%s source=%s rationale=%s\n", rule.ID, rule.Source, rule.Rationale)

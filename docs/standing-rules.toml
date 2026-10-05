@@ -1,4 +1,4 @@
-# Operator rulings in force on 2026-10-04. Decode into recommend.DefaultPolicy().
+# Operator rulings in force on 2026-10-05. Decode into recommend.DefaultPolicy().
 # Exact canonical names only; the CLI resolves aliases and supplies the hostname.
 # Keep rule order: hard filters accumulate and forbid always beats require.
 # These are operator constraints, not evidence of candidate admission.
@@ -18,19 +18,22 @@ b = 20
 [[rules]]
 id = "mini-codex-first"
 source = "tb-R164"
-rationale = "Prefer Codex on the mini inside each qualified tier."
+rationale = "Prefer Codex inside each qualified tier; demanding reviews prefer Codex only within the best-quality band."
 [rules.when]
 host = "<your-mini-host>"
+difficulty = ["trivial", "routine", "standard", "hard", "critical"]
 [rules.prefer]
 runtimes = ["codex", "claude", "agy", "muse", "local-qwen"]
 
 [[rules]]
 id = "mini-review-astra-medium"
 source = "tb-R164"
-rationale = "Pin mini reviewers to the operator's Astra medium configuration."
+rationale = "Pin normal trivial/routine/standard mini reviews to Astra medium; stronger reviews retain the tier floor and Codex preference."
 [rules.when]
 host = "<your-mini-host>"
 role = "reviewer"
+difficulty = ["trivial", "routine", "standard"]
+sensitivity = ["normal"]
 [rules.require]
 runtime = "codex"
 model = "gpt-6-astra"

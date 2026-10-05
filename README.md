@@ -33,16 +33,23 @@ Task-aware model routing for coding agents. Given a description of the work, its
 ```sh
 cmr help
 cmr recommend --role developer --task-class code.implement
+cmr recommend --role developer --task-class code.implement --budget burn
 cmr recommend --role developer --task-class code.fix --difficulty hard --json
 cmr recommend --role reviewer --task-class review.code --delicate --host "<your-host>"
 cmr usage refresh --runtime codex --ttl 10m --json
 cmr usage show --json
 cmr spawn --task-class code.implement -- TASK --role developer --background
 cmr spawn --task-class code.fix --mode recommend --json -- TASK --role developer --background
-cmr spawn --task-class research --fanout -- TASK --role researcher --background
+cmr spawn --task-class research --fanout --budget burn -- TASK --role researcher --background
 cmr spawn --task-class review.code --story "<STORY-ID>" --policy ~/.curator/routing.toml -- TASK --role reviewer --background
 ```
 
 Put the task brief, scope, acceptance criteria, and precondition resources on the board task before spawning. Task-board builds the agent prompt from the role template and that board state; `--instruction RESOURCE` selects a precondition resource.
 
 See [the integration guide](docs/integration.md) for policy defaults, catalog and admission overrides, modes, and usage caching.
+
+Spending policy `budget_mode` defaults to `balanced`. Use `--budget economy` for the cheapest
+qualified configuration or `--budget burn` for best quality and up to four distinct A+
+families in fan-out. Tier floors and admission still apply. The mini review pin is scoped
+to normal trivial/routine/standard work; stronger reviews rank quality first and prefer
+Codex among the best qualified candidates.

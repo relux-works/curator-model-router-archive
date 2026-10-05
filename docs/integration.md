@@ -46,6 +46,8 @@ Unknown fields and invalid values refuse. Defaults include:
 ```toml
 schema_version = "recommend-policy-v1"
 mode = "select"
+budget_mode = "balanced"
+burn_fanout_cap = 4
 allow_metered = false
 standard_a_max_cost_ratio = 1.5
 interchangeable_cost_bp = 2500
@@ -90,24 +92,66 @@ keeper rulings, and then make it yours before relying on it:
 Use `--host` to override policy `host`; otherwise the short hostname is used. Pass `--story`,
 `--producer-family`, and repeatable `--exclude runtime/model` to activate their rule facets.
 These rules filter already admitted candidates and never bypass a difficulty floor or caller lock.
+`rules.when.difficulty` and `rules.when.sensitivity` are optional nonempty lists of task
+values; omitted lists match any task. The mini Astra medium pin applies only to normal
+trivial/routine/standard reviews. Demanding reviews retain the Codex preference and pick
+the best qualified configuration, preferring Codex within the same best-quality band.
+The preference explicitly scopes all difficulties; only its own matching scope enables
+this tie behavior. An unrelated or skipped rule cannot change ranking.
+Skipped scoped rules name the mismatching facet in the explanation.
 
 `review.code` and `review.spec` use optional measured `quality.review` and
 `review_tier_edges`. A missing measurement falls back to the previous index and
 index tiers, with `review_quality_from_index` and an explicit `quality_index`.
+When comparing review quality, measured rows always rank above index fallbacks,
+including Pareto dominance, burn and fan-out. Fallbacks compete by index only
+among themselves; neither equal numeric values nor headroom create a cross-scale tie.
+Tiering still uses each row's own scale, and admission and standing rules still apply.
 For review quality objectives, differences below the larger SE tie and cost then
 configuration order break the tie, even for critical tasks. Bands are anchored
 to the highest remaining mean to avoid non-transitive noise comparisons.
-Hard rules apply before ranking; headroom and soft preferences cannot reverse
-this quality-objective order. See [catalog notes](../catalog/NOTES.md) for the
+Hard rules apply before ranking. Balanced preserves review quality order; matching
+scoped high-stakes reviewer preferences break ties inside anchored quality bands.
+Measurements still precede fallbacks when a preference favors a fallback runtime.
+Burn uses headroom before cost/key inside ties, after matching scoped preferences.
+See [catalog notes](../catalog/NOTES.md) for the
 measured table and difficulty picks, and [the local importer](../tools/review-import/README.md)
 for reproducible refresh instructions. The measurement is a TypeScript Bug Hunt
 proxy; catalog cost keeps its separate resource-proxy provenance.
 
+## Spending policy
+
+Both `recommend` and `spawn` accept `--budget economy|balanced|burn`, overriding policy
+`budget_mode` for this decision. Balanced is the default and retains existing selection.
+Economy chooses the cheapest qualified configuration at every difficulty and skips the
+standard A upgrade; hard/critical/delicate floors still apply. Burn maximizes quality at
+every difficulty, spends the most remaining known subscription headroom inside quality
+ties, and fans out to every qualified A+ family up to `burn_fanout_cap` (default 4).
+Admission, locks and billing rules still apply. Usage that is unknown or stale is neutral.
+Automatic per-runtime budget selection is deferred; `auto` is rejected.
+
+```sh
+cmr recommend --role developer --task-class code.implement --budget burn
+cmr spawn --task-class review.code --budget economy --mode recommend -- TASK --role reviewer --background
+```
+
+The chosen policy is frozen in the decision and its content ID. Empty/omitted wire
+`budget_mode` means balanced for compatibility with existing goldens and records.
+Human output prints the effective budget; JSON records non-default modes explicitly.
+
 ## Modes and output
 
 `--mode select` invokes task-board with the filled flags (default). `--mode recommend` prints the
-complete proposed argv and launches nothing. `--mode shadow` executes the original argv unchanged
-and logs the recommendation's decision ID; the full recommendation is stored. Policy `mode` supplies
+complete proposed argv and launches nothing. In both flag and policy modes, **shadow is fail-open**:
+`--mode shadow` executes the caller's task-board spawn arguments unchanged even when recommendation fails
+(invalid admission, preflight error, refusal, no qualified candidate, policy load error,
+or usage error). The would-be decision or typed error is logged on stderr as `cmr:shadow ...`;
+completed decisions are also stored. Logging or decision-storage failures cannot block launch.
+Only cmr argument parse errors before `--` and a missing task-board binary stop shadow;
+arguments after `--` are passed through even if cmr cannot parse them. Task-board owns the
+output and exit status. Policy `mode = "shadow"` has the same behavior; a readable shadow
+declaration is honored even if other policy fields are invalid. An unreadable policy cannot
+declare a mode, so use `--mode shadow` to guarantee fail-open behavior in that case. Policy `mode` supplies
 the default when no mode flag is present. `cmr recommend` always computes and prints without spawning.
 Human output includes the selection, ranked alternatives, rule sources, exact flags, admission source
 and decision ID. `--json` gives structured output for every new command and typed refusal; select/shadow

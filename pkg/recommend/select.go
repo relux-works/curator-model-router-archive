@@ -31,7 +31,11 @@ func BuildDecision(in Request) (DecisionRecord, error) {
 	if err != nil {
 		return DecisionRecord{}, err
 	}
-	d := DecisionRecord{SchemaVersion: DecisionVersion, SelectorVersion: SelectorVersion, Inputs: in, Recommendation: r}
+	version := SelectorVersion
+	if in.Policy.EffectiveBudgetMode() != "balanced" || hasScopedRules(in.Policy) {
+		version = BudgetSelectorVersion
+	}
+	d := DecisionRecord{SchemaVersion: DecisionVersion, SelectorVersion: version, Inputs: in, Recommendation: r}
 	id, err := d.ContentID()
 	if err != nil {
 		return DecisionRecord{}, err
@@ -46,7 +50,7 @@ func (d DecisionRecord) ContentID() (string, error) {
 	return canonical.Digest(d)
 }
 func (d DecisionRecord) VerifyContentID() error {
-	if d.SchemaVersion != DecisionVersion || d.SelectorVersion != SelectorVersion {
+	if d.SchemaVersion != DecisionVersion || (d.SelectorVersion != SelectorVersion && d.SelectorVersion != BudgetSelectorVersion) {
 		return refuse(DecisionMismatch, "unsupported decision or selector version")
 	}
 	id, err := d.ContentID()
@@ -217,6 +221,15 @@ func selectCandidates(in Request) (Recommendation, error) {
 		floor = TierS
 		objective = "quality_ignore_cost"
 	}
+	budget := in.Policy.EffectiveBudgetMode()
+	if budget != "balanced" {
+		r.BudgetMode = budget
+		if budget == "economy" {
+			objective = "cheapest"
+		} else {
+			objective = "quality"
+		}
+	}
 	for _, row := range in.Catalog.Rows {
 		catalogued[row.Key()] = true
 		q := taskQuality(row, in.Task.TaskClass)
@@ -325,7 +338,7 @@ func selectCandidates(in Request) (Recommendation, error) {
 	slices.SortFunc(pool, func(i, j int) int {
 		a, b := r.Explanation[i], r.Explanation[j]
 		if qualityObjective {
-			if c := qualityCompare(a.Quality, b.Quality); c != 0 {
+			if c := rankedQualityCompare(a.RankedCandidate, b.RankedCandidate); c != 0 {
 				return c
 			}
 			if objective != "quality_ignore_cost" {
@@ -343,7 +356,7 @@ func selectCandidates(in Request) (Recommendation, error) {
 			if c := costCompare(a.Cost, b.Cost); c != 0 {
 				return c
 			}
-			if c := qualityCompare(a.Quality, b.Quality); c != 0 {
+			if c := rankedQualityCompare(a.RankedCandidate, b.RankedCandidate); c != 0 {
 				return c
 			}
 		}
@@ -378,7 +391,7 @@ func selectCandidates(in Request) (Recommendation, error) {
 			fits := true
 			for _, j := range group {
 				y := r.Explanation[j]
-				fits = fits && x.Tier == y.Tier && interchangeable(x.Cost, y.Cost, in.Policy.InterchangeableCostBP) && (!qualityObjective || qualityCompare(x.Quality, y.Quality) == 0)
+				fits = fits && budget == "balanced" && x.Tier == y.Tier && interchangeable(x.Cost, y.Cost, in.Policy.InterchangeableCostBP) && (!qualityObjective || rankedQualityCompare(x.RankedCandidate, y.RankedCandidate) == 0)
 				// Review quality ties have a prescribed cost/configuration order.
 				if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") {
 					fits = false
@@ -405,9 +418,19 @@ func selectCandidates(in Request) (Recommendation, error) {
 	pool = ordered
 	applyPreferences(in, &r, pool)
 	if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") {
-		// Hard standing rules already filtered admission. Soft preferences cannot
-		// reverse the review objective's quality bands and cost/key tie breakers.
+		// Hard rules already filtered admission. Preserve the legacy review quality
+		// order before matching scoped reviewer preferences break quality ties.
 		pool = orderReviewQuality(pool, &r)
+	}
+	if budget == "burn" {
+		pool = orderBurnQuality(pool, &r, in.Task.TaskClass)
+		// Preserve non-review standing preferences inside qualified tiers.
+		if !strings.HasPrefix(in.Task.TaskClass, "review.") {
+			applyPreferences(in, &r, pool)
+		}
+	}
+	if qualityObjective && strings.HasPrefix(in.Task.TaskClass, "review.") && highStakesReview(in) {
+		pool = orderPreferredReview(in, &r, pool)
 	}
 	chosen := map[int]bool{}
 	if in.Task.Pipeline == "fanout" {
@@ -418,7 +441,11 @@ func selectCandidates(in Request) (Recommendation, error) {
 				reason(x, "fanout_duplicate_family")
 				continue
 			}
-			if len(r.FanOut) >= in.Policy.FanOutK {
+			cap := in.Policy.FanOutK
+			if budget == "burn" {
+				cap = in.Policy.EffectiveBurnFanOutCap()
+			}
+			if len(r.FanOut) >= cap {
 				reason(x, "fanout_limit")
 				continue
 			}
@@ -489,9 +516,19 @@ func qualityIndex(r CatalogRow, class string) string {
 // mean, then sort each band by cost and canonical configuration key. Never
 // feed a non-transitive pairwise noise comparison to a sorting algorithm.
 func orderReviewQuality(pool []int, r *Recommendation) []int {
+	return orderReviewQualityBy(pool, r, func(i, j int) int {
+		a, b := r.Explanation[i], r.Explanation[j]
+		if c := costCompare(a.Cost, b.Cost); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Candidate.Key(), b.Candidate.Key())
+	})
+}
+
+func orderReviewQualityBy(pool []int, r *Recommendation, compare func(i, j int) int) []int {
 	remaining := slices.Clone(pool)
 	slices.SortFunc(remaining, func(i, j int) int {
-		if c := qualityCompare(r.Explanation[i].Quality, r.Explanation[j].Quality); c != 0 {
+		if c := rankedQualityCompare(r.Explanation[i].RankedCandidate, r.Explanation[j].RankedCandidate); c != 0 {
 			return c
 		}
 		return strings.Compare(r.Explanation[i].Candidate.Key(), r.Explanation[j].Candidate.Key())
@@ -507,13 +544,7 @@ func orderReviewQuality(pool []int, r *Recommendation) []int {
 				rest = append(rest, i)
 			}
 		}
-		slices.SortFunc(band, func(i, j int) int {
-			a, b := r.Explanation[i], r.Explanation[j]
-			if c := costCompare(a.Cost, b.Cost); c != 0 {
-				return c
-			}
-			return strings.Compare(a.Candidate.Key(), b.Candidate.Key())
-		})
+		slices.SortFunc(band, compare)
 		if len(band) > 1 {
 			for _, i := range band {
 				reason(&r.Explanation[i], "review_quality_noise_tie")
@@ -525,6 +556,9 @@ func orderReviewQuality(pool []int, r *Recommendation) []int {
 	return ordered
 }
 func reviewNoiseTie(a, b RankedCandidate) bool {
+	if (a.QualityIndex == "review") != (b.QualityIndex == "review") {
+		return false
+	}
 	if a.QualityIndex != "review" || b.QualityIndex != "review" {
 		return qualityCompare(a.Quality, b.Quality) == 0
 	}
@@ -551,6 +585,19 @@ func qualityCompare(a, b *QualityValue) int {
 		return -1
 	}
 	return cmp.Compare(b.Value, a.Value)
+}
+
+// Review measurements and index fallbacks have different scales. Compare
+// provenance first, then values only within the same population. Other task
+// classes never carry the review quality index and retain their old ordering.
+func rankedQualityCompare(a, b RankedCandidate) int {
+	if (a.QualityIndex == "review") != (b.QualityIndex == "review") {
+		if a.QualityIndex == "review" {
+			return -1
+		}
+		return 1
+	}
+	return qualityCompare(a.Quality, b.Quality)
 }
 func costAxis(c Cost) (string, float64) {
 	if c.USDPerTask != nil {
@@ -600,7 +647,7 @@ func dominates(a, b RankedCandidate) bool {
 	if a.Quality == nil || b.Quality == nil || au == "unknown" || au != bu {
 		return false
 	}
-	q, c := qualityCompare(a.Quality, b.Quality), costCompare(a.Cost, b.Cost)
+	q, c := rankedQualityCompare(a, b), costCompare(a.Cost, b.Cost)
 	return q <= 0 && c <= 0 && (q < 0 || c < 0)
 }
 
