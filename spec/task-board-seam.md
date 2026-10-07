@@ -72,8 +72,12 @@ path must not be presented as routing the earlier reservation.
 
 Any typed selection dimension makes the launch explicit. In select, skip the
 router for that spawn and preserve the existing handling of missing dimensions.
-In shadow, an advisory call may use `Request.Locks` for those typed values, but
-must never change the launched pair. Typed means the original CLI values, not
+In shadow, the advisory call must leave `Request.Locks` empty: compute the
+unconstrained recommendation for the role and task profile within task-board's
+admitted, workload and available set. Typed values remain in the native
+selection audit, separately from `router_pair`; the launched pair stays unchanged.
+Record `launched_agreement` against the actual post-claim launched pair so a
+shadow week measures real divergence. Typed means the original CLI values, not
 role defaults subsequently copied into the selection request.
 
 | task-board input | `recommend.Request` mapping |
@@ -226,7 +230,10 @@ compatibility transport and owner approval; it is not proposed for v1.)
 
 Add an optional `routing` object to the existing selection audit, manifest and
 RUN state/response. Carry it through queue preparation and terminalization.
-Omit it entirely in off mode to preserve old serialized bytes.
+Omit it entirely in off mode to preserve old serialized bytes. Off reservations
+also omit queued route/difficulty/delicate/routing-budget hints. An omitted
+queued mode means off at preparation, even if live project configuration enables
+routing later; enabled reservations explicitly freeze their effective mode.
 
 | Field | Meaning |
 | --- | --- |
@@ -235,6 +242,7 @@ Omit it entirely in off mode to preserve old serialized bytes.
 | `selected_pair` | Actual final native runtime/model/effort after task-board validation/claims. |
 | `router_pair` | Original router proposal, separate from the final launch. |
 | `ladder_pair` | Old ladder's result on the frozen snapshot; in shadow, the actual ladder outcome. |
+| `launched_agreement` | Nullable boolean: router_pair equals the actually launched selected_pair, including typed shadow launches and claim retries. |
 | `agreement` | Nullable boolean: router_pair equals ladder_pair exactly; null when either is unavailable. |
 | `error` | Nullable sanitized `{code, message}` describing router failure/abstention. |
 | `source`, `fallback`, `attempts` | Distinguish explicit bypass, router, ranked alternative and legacy fallback; retain rejected group reasons. |
