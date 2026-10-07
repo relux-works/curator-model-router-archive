@@ -10,13 +10,13 @@ An explicit difficulty wins over the task-class default. `--delicate` requests t
 configuration; `--fanout` launches up to three A-or-better configurations from distinct families.
 The embedded researched catalog currently has only two such families at the default edges.
 
-The caller's `--agent`, `--model`, and `--reasoning-effort` flags are locks, including `--flag=value`.
+In select/recommend modes, the caller's `--agent`, `--model`, and `--reasoning-effort` flags are locks, including `--flag=value`. Shadow ignores these forwarded selection locks for its advisory decision; cmr-side flags before `--` still constrain it.
 Values of other task-board options are consumed according to their flag arity, including flag-looking strings and literal `--` values. Unknown forwarded options refuse so their arity cannot be guessed.
 cmr fills missing flags and forwards board selectors to every preflight query. It appends `--selection-rationale 'cmr:<decision-id> ...'` only for v2 ordered criteria or v3/v4 `adjustment_confirmation = "required"`. Equal/absent criteria and confirmation `none` forbid that flag. Caller rationale values remain unchanged; candidate files and PATH discovery supply no confirmation policy, so cmr adds no rationale in those cases. The decision ID remains in cmr output and the local decision log.
 Task-board's empty effort for a model without an effort axis maps to the catalog's `none` row;
 cmr omits `--reasoning-effort` when printing or injecting that configuration.
 Conflicting or duplicate selection flags are typed refusals. An empty qualified set returns
-`no_qualified_candidate` and launches nothing in every mode. Each launch still passes through
+`no_qualified_candidate` and launches nothing in select/recommend modes. Shadow still launches the original caller arguments. Each launch still passes through
 task-board's existing spawn gate; task-board output and exit status pass through unchanged.
 Fan-out invokes the gate sequentially once per selected configuration and stops on the first failure;
 already launched runs remain launched.
@@ -159,6 +159,109 @@ preserve task-board's own output format and exit code. To request task-board JSO
 
 Decision records live under `$XDG_STATE_HOME/curator/model-router/decisions/` and contain the frozen inputs
 and replayable recommendation. When XDG_STATE_HOME is unset, `$HOME/.local/state` is used.
+
+## Shadow observations and reports
+
+Run shadow for one week before switching an orchestrator to select, then read the divergence
+summary for the founders:
+
+```sh
+cmr spawn --task-class code.implement --mode shadow -- TASK --role developer --agent codex --model gpt-6.1-sol --reasoning-effort high --background
+cmr shadow report
+cmr shadow report --since 2026-10-07T00:00:00Z
+cmr shadow report --since 2026-10-07T00:00:00Z --json
+```
+
+Shadow computes the advisory pick without locking to forwarded `--agent`, `--model`, or
+`--reasoning-effort`. Forwarded `--role` still defines admission, and conflicts with a different
+cmr-side role are advisory errors. Explicit cmr-side selection flags before `--`, admission,
+policy, budget, and tier floors still apply. The actual spawn argv is preserved byte for byte;
+shadow launches once even when the advisory decision uses fan-out. `cmr_pick` records its primary
+selected configuration, the first fan-out configuration; the decision record retains the full fan-out.
+
+After the child completes, shadow appends one JSON line to
+`$XDG_STATE_HOME/curator/model-router/shadow/observations.jsonl` (default
+`$HOME/.local/state/curator/model-router/shadow/observations.jsonl`). Observation storage uses
+private directory/file permissions and a single append write per line. A storage failure prints
+`cmr:shadow warning: could not append observation` on stderr and preserves launch and exit status.
+A failed append leaves no observation to count; monitor these warnings during the shadow week.
+
+The stable `shadow-observation-v1` JSON fields are:
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version` | `shadow-observation-v1` |
+| `time` | UTC RFC3339 timestamp after child completion, possibly fractional seconds |
+| `decision_id` | Content ID, or `null` when none was computed; may exist even if decision storage failed |
+| `role`, `task_class`, `difficulty`, `sensitivity`, `budget` | Effective advisory profile and budget; on early failures, available input values and resolvable defaults |
+| `cmr_pick` | `{runtime, model, effort}` on success, or `{code}` for refusal/advisory error |
+| `caller_pair` | `{runtime, model, effort}` from explicit forwarded flags; absent dimensions are `null`, meaning board defaults; no defaults are guessed |
+| `agreement` | One of the classes below |
+| `task_board_exit_code` | Preserved child status; execution start failures use cmr's failure status |
+| `cmr_error` | Present only on advisory failure: `{code, message}` with a typed code and fixed sanitized message; no provider diagnostics, paths, or raw argv |
+
+If forwarded parsing fails, only flags parsed safely before the error are available for the
+observation. Arguments after task-board's own `--` are literal arguments, not selection flags.
+The complete launch still passes through unchanged.
+
+Agreement classification checks absence of a cmr pick first, then any missing caller dimension,
+then runtime, model, and effort. Registry model aliases are canonicalized for comparison while the
+recorded caller values and launched arguments stay unchanged:
+
+| Class | Meaning |
+| --- | --- |
+| `exact` | All three explicit caller dimensions match the pick |
+| `same_model_other_effort` | Runtime and model match; effort differs |
+| `same_runtime_other_model` | Runtime matches; model differs |
+| `different_runtime` | Runtime differs |
+| `unknown_caller_default` | A pick exists but at least one caller dimension is `null` |
+| `no_cmr_pick` | Refusal or advisory error, never agreement |
+
+Human report output starts with observation/comparison/agree/diverge totals, then counts unknown
+caller defaults, refusals, FAIL-OPEN launches, and nonzero task-board exits. It shows the agreement
+distribution, all divergence groups ordered by count, refusal counts, and a separate **FAIL-OPEN
+launches** list of advisory errors. A comparison requires a successful pick and three explicit
+caller dimensions. Its denominator excludes unknown defaults, refusals, and advisory errors.
+A nonzero task-board exit alone does not imply an advisory failure or refusal.
+
+`--since` is inclusive and accepts RFC3339 with an offset or fractional seconds; report JSON
+normalizes it to UTC. Missing observations produce an empty successful report. Unreadable,
+malformed or unsupported-schema complete lines cause a typed report error; they are never
+silently counted as agreement. Only the final record may be unterminated (an interrupted
+append): a complete record that lost just its newline still counts, while a partial final
+record of any size is excluded, `totals.truncated_tail` is `true`, and the human report prints
+a warning. A concurrent append after the report reaches EOF
+is included on the next report invocation.
+
+`--json` emits stable `shadow-report-v1`:
+
+```json
+{
+  "schema_version": "shadow-report-v1",
+  "since": null,
+  "totals": {
+    "observations": 0, "comparisons": 0, "agreements": 0, "divergences": 0,
+    "unknown_caller_defaults": 0, "refusals": 0, "fail_open_launches": 0,
+    "nonzero_task_board_exits": 0,
+    "truncated_tail": false
+  },
+  "agreement_distribution": {
+    "exact": 0, "same_model_other_effort": 0, "same_runtime_other_model": 0,
+    "different_runtime": 0, "unknown_caller_default": 0, "no_cmr_pick": 0
+  },
+  "top_divergences": [],
+  "refusals": [],
+  "fail_open_launches": []
+}
+```
+
+Every distribution key is always present. `top_divergences` entries contain
+`{role, task_class, difficulty, caller_pair, cmr_pick, count}` grouped by those five dimensions;
+they include all groups in descending count order, with serialized JSON group keys breaking ties.
+`refusals` entries are `{code, count}`, ordered by descending count then code. Advisory errors
+are excluded from refusals and appear as full observations in `fail_open_launches`, in file order.
+Empty arrays remain `[]`, and omitted `--since` is `null`. No generated report timestamp is added,
+so unchanged observations and arguments produce identical JSON.
 
 ## Usage
 

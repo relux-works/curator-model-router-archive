@@ -16,7 +16,7 @@ import (
 
 func TestShadowFailOpen(t *testing.T) {
 	for _, policyMode := range []bool{false, true} {
-		for _, failure := range []string{"success", "invalid_admission", "preflight_error", "refusal", "no_qualified_candidate", "policy_validation", "policy_decode", "policy_conversion", "policy_syntax", "usage_error", "catalog_error", "decision_write", "forwarded_parse", "conflicting_locks"} {
+		for _, failure := range []string{"success", "invalid_admission", "preflight_error", "refusal", "no_qualified_candidate", "policy_validation", "policy_decode", "policy_conversion", "policy_syntax", "usage_error", "catalog_error", "decision_write", "forwarded_parse", "conflicting_role"} {
 			name := "flag/"
 			if policyMode {
 				name = "policy/"
@@ -65,9 +65,9 @@ func TestShadowFailOpen(t *testing.T) {
 					}
 				case "forwarded_parse":
 					forwarded = []string{"TASK", "--unknown", "--model"}
-				case "conflicting_locks":
-					options = append(options, "--agent", "codex")
-					forwarded = []string{"TASK", "--agent=claude"}
+				case "conflicting_role":
+					options = append(options, "--role", "reviewer")
+					forwarded = []string{"TASK", "--role=developer"}
 				}
 				if err := os.WriteFile(policy, []byte(body), 0600); err != nil {
 					t.Fatal(err)
@@ -96,6 +96,25 @@ func TestShadowFailOpen(t *testing.T) {
 				if len(got) < len(want) || !reflect.DeepEqual(got[len(got)-len(want):], want) || strings.Count(string(b), "spawn\n") != 1 {
 					t.Fatal("shadow changed spawn argv", got, want)
 				}
+				observations := readShadowObservations(t)
+				if len(observations) != 1 || observations[0].TaskBoardExitCode != 23 {
+					t.Fatal("missing post-launch observation", observations)
+				}
+				observation := observations[0]
+				switch failure {
+				case "success":
+					if observation.CMRError != nil || observation.Agreement != "unknown_caller_default" {
+						t.Fatal(observation)
+					}
+				case "no_qualified_candidate":
+					if observation.CMRError != nil || observation.CMRPick.Code != "no_qualified_candidate" || observation.Agreement != "no_cmr_pick" {
+						t.Fatal(observation)
+					}
+				default:
+					if observation.CMRError == nil || observation.CMRPick.Code != observation.CMRError.Code || observation.Agreement != "no_cmr_pick" {
+						t.Fatal(observation)
+					}
+				}
 				if out.Len() != 0 || !strings.HasPrefix(stderr.String(), "cmr:shadow ") {
 					t.Fatal("recommendation leaked into board output or missing shadow log", out.String(), stderr.String())
 				}
@@ -104,7 +123,7 @@ func TestShadowFailOpen(t *testing.T) {
 						t.Fatal("missing would-be decision", stderr.String())
 					}
 				} else {
-					wantError := map[string]string{"invalid_admission": "invalid_admission", "preflight_error": "spawn-preflight failed", "refusal": "invalid_task", "no_qualified_candidate": "no_qualified_candidate", "policy_validation": "invalid_policy", "policy_decode": "invalid_policy", "policy_conversion": "invalid_policy", "policy_syntax": "invalid_policy", "usage_error": "cmr_usage_", "catalog_error": "invalid_catalog", "decision_write": "cmr_decision_write_failed", "forwarded_parse": "cmr_invalid_arguments", "conflicting_locks": "conflicting --agent"}[failure]
+					wantError := map[string]string{"invalid_admission": "invalid_admission", "preflight_error": "spawn-preflight failed", "refusal": "invalid_task", "no_qualified_candidate": "no_qualified_candidate", "policy_validation": "invalid_policy", "policy_decode": "invalid_policy", "policy_conversion": "invalid_policy", "policy_syntax": "invalid_policy", "usage_error": "cmr_usage_", "catalog_error": "invalid_catalog", "decision_write": "cmr_decision_write_failed", "forwarded_parse": "cmr_invalid_arguments", "conflicting_role": "conflicting --role"}[failure]
 					if !strings.Contains(stderr.String(), wantError) {
 						t.Fatal("missing advisory failure", wantError, stderr.String())
 					}

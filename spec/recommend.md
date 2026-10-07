@@ -227,7 +227,7 @@ The admitted set comes from, in order:
    says so.
 
 Every recommendation is a subset of the admitted set. Locked values are respected (R7): if the caller passes
-`--agent`, `--model` or `--reasoning-effort`, the router only fills the rest.
+`--agent`, `--model` or `--reasoning-effort`, the router only fills the rest in select/recommend. Shadow advisory decisions ignore forwarded selection locks; cmr-side locks still apply and forwarded role still defines admission.
 
 ## 5. Usage facts (quota)
 
@@ -274,6 +274,13 @@ Modes, set by `--mode` or the policy:
   an unreadable policy supplies no mode and select/recommend refuse. Explicit
   `--mode shadow` always launches. Shadow preserves the completed child’s exit
   status even if copying stdout or stderr fails; failure to start still refuses.
+  Append a `shadow-observation-v1` JSON line after completion, comparing the
+  unconstrained advisory pick to explicit forwarded selection flags. Missing
+  caller dimensions remain null and yield `unknown_caller_default`, never agreement.
+  Observation-write failures warn without changing status. `cmr shadow report`
+  (`--since RFC3339`, `--json`) aggregates divergence groups and lists advisory
+  errors separately as FAIL-OPEN launches. Stable observation/report schemas and
+  comparison denominators are documented in `docs/integration.md`.
 
 On `no_qualified_candidate`, select/recommend refuse and never launch anything;
 shadow still forwards the original launch.
